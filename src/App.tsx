@@ -1,20 +1,38 @@
-import { useCallback, useMemo } from 'react';
-import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes } from '@xyflow/react';
+import { useCallback, useMemo, useState } from 'react';
+import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { Sidebar } from './components/Sidebar';
 import { Terminal } from './components/Terminal';
+import { Inspector } from './components/Inspector';
 import { GardeniasLogo } from './components/GardeniasLogo';
 import { ResolveNode } from './components/ResolveNode';
-import { Settings, Sliders } from 'lucide-react';
-const initialNodes = [
-    { id: '1', position: { x: 100, y: 100 }, data: { label: 'Input', toolType: 'default', type: 'input' }, type: 'resolve' },
+import { ToolRegistry } from './registry/tools';
+import { Node } from '@xyflow/react';
+
+// Define the custom node type for our app
+export type NodeData = {
+    label: string;
+    category?: string;
+    toolId?: string;
+    toolData?: any;
+    parameterValues?: Record<string, any>;
+    [key: string]: any;
+};
+
+export type AppNode = Node<NodeData>;
+
+const initialNodes: AppNode[] = [
+    { id: '1', position: { x: 100, y: 100 }, data: { label: 'Input', category: 'Input' }, type: 'resolve' },
 ];
 const initialEdges: any[] = [];
 
-export default function App() {
-    const [nodes, , onNodesChange] = useNodesState(initialNodes);
+// Wrapper component to use the ReactFlow hook
+const Flow = () => {
+    const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    const { screenToFlowPosition } = useReactFlow();
+    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
     const nodeTypes = useMemo<NodeTypes>(() => ({ resolve: ResolveNode }), []);
 
@@ -22,6 +40,76 @@ export default function App() {
         (params: Connection) => setEdges((eds) => addEdge(params, eds)),
         [setEdges],
     );
+
+    const onDragOver = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    }, []);
+
+    const onDrop = useCallback(
+        (event: React.DragEvent) => {
+            event.preventDefault();
+
+            const toolId = event.dataTransfer.getData('application/reactflow');
+            const tool = ToolRegistry.getById(toolId);
+
+            // check if the dropped element is valid
+            if (typeof toolId === 'undefined' || !toolId || !tool) {
+                return;
+            }
+
+            const position = screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
+            });
+
+            const newNode: AppNode = {
+                id: `${toolId}-${Date.now()}`,
+                type: 'resolve',
+                position,
+                data: {
+                    label: tool.name,
+                    category: tool.category,
+                    toolId: tool.id,
+                    toolData: tool,
+                    parameterValues: {} // Initialize empty params
+                },
+            };
+
+            setNodes((nds) => nds.concat(newNode));
+        },
+        [screenToFlowPosition, setNodes],
+    );
+
+    const onNodeClick = useCallback((_: React.MouseEvent, node: AppNode) => {
+        setSelectedNodeId(node.id);
+    }, []);
+
+    const onPaneClick = useCallback(() => {
+        setSelectedNodeId(null);
+    }, []);
+
+    const updateNodeData = useCallback((nodeId: string, newData: NodeData) => {
+        setNodes((nds) =>
+            nds.map((node) => {
+                if (node.id === nodeId) {
+                    return { ...node, data: newData };
+                }
+                return node;
+            })
+        );
+    }, [setNodes]);
+
+    const runWorkflow = () => {
+        (window as any).electronAPI?.runWorkflow({ nodes, edges })
+            .then((res: any) => console.log(res))
+            .catch((err: any) => console.error(err));
+    };
+
+    // Derived state for the inspector
+    const selectedNode = useMemo(() =>
+        nodes.find((n) => n.id === selectedNodeId) || null,
+        [nodes, selectedNodeId]);
 
     return (
         <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#18181b] text-[#ccc] font-sans">
@@ -38,11 +126,7 @@ export default function App() {
 
                 <button
                     className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
-                    onClick={() => {
-                        (window as any).electronAPI?.runWorkflow({ nodes, edges })
-                            .then((res: any) => console.log(res))
-                            .catch((err: any) => console.error(err));
-                    }}
+                    onClick={runWorkflow}
                 >
                     <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
                     RUN
@@ -60,13 +144,15 @@ export default function App() {
 
                 {/* Center: Node Graph */}
                 <div className="flex-1 bg-[#121212] flex flex-col overflow-hidden">
-                    <div className="flex-1 relative overflow-hidden">
+                    <div className="flex-1 relative overflow-hidden" onDrop={onDrop} onDragOver={onDragOver}>
                         <ReactFlow
                             nodes={nodes}
                             edges={edges}
                             onNodesChange={onNodesChange}
                             onEdgesChange={onEdgesChange}
                             onConnect={onConnect}
+                            onNodeClick={onNodeClick}
+                            onPaneClick={onPaneClick}
                             nodeTypes={nodeTypes}
                             fitView
                             colorMode="dark"
@@ -82,35 +168,19 @@ export default function App() {
                 </div>
 
                 {/* Right Panel: Inspector */}
-                <div className="w-[280px] flex flex-col border-l border-[#000] bg-[#1f1f23]">
-                    <div className="h-8 bg-[#2a2a2a] flex items-center px-3 justify-between border-b border-[#121212]">
-                        <span className="text-xs font-semibold text-[#bbb]">INSPECTOR</span>
-                        <Settings size={12} className="text-[#666]" />
-                    </div>
-                    <div className="p-4 space-y-4">
-                        <div className="space-y-2">
-                            <label className="text-[10px] uppercase font-bold text-[#666]">Node Name</label>
-                            <input type="text" value="Input Node" className="w-full bg-[#121212] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-[#d97706] outline-none" disabled />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-[10px] uppercase font-bold text-[#666]">Parameters</label>
-                            <div className="bg-[#18181b] p-2 rounded border border-[#222] space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs text-[#999]">Threshold</span>
-                                    <span className="text-xs text-[#d97706]">0.85</span>
-                                </div>
-                                <div className="h-1 bg-[#333] rounded-full overflow-hidden">
-                                    <div className="w-[85%] h-full bg-[#d97706]" />
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-[#999] hover:text-[#ccc] cursor-pointer">
-                                <Sliders size={12} /> <span>Advanced Settings</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <Inspector
+                    node={selectedNode}
+                    onUpdate={updateNodeData}
+                />
             </div>
         </div>
+    );
+}
+
+export default function App() {
+    return (
+        <ReactFlowProvider>
+            <Flow />
+        </ReactFlowProvider>
     );
 }

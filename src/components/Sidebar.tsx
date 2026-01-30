@@ -100,7 +100,12 @@ export const Sidebar = () => {
                                     {category.tools.map(tool => (
                                         <div
                                             key={tool.id}
-                                            className="group flex items-center gap-3 px-3 py-2 rounded-[2px] hover:bg-[#2a2a2a] cursor-grab transition-colors border border-transparent hover:border-[#333]"
+                                            draggable
+                                            onDragStart={(event) => {
+                                                event.dataTransfer.setData('application/reactflow', tool.id);
+                                                event.dataTransfer.effectAllowed = 'move';
+                                            }}
+                                            className="group flex items-center gap-3 px-3 py-2 rounded-[2px] hover:bg-[#2a2a2a] cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-[#333]"
                                             title={tool.description}
                                         >
                                             <div className="w-8 h-8 rounded bg-[#18181b] border border-[#2a2a2a] flex items-center justify-center text-[#666] group-hover:text-[#34d399] group-hover:border-[#34d399]/50 transition-all font-mono text-[10px]">
