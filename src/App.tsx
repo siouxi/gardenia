@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -11,7 +11,7 @@ import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 // Define the custom node type for our app
 export type NodeData = {
@@ -32,6 +32,62 @@ const initialEdges: any[] = [];
 
 // Wrapper component to use the ReactFlow hook
 const Flow = () => {
+    // Layout State
+    const [leftPanelWidth, setLeftPanelWidth] = useState(320);
+    const [rightPanelWidth, setRightPanelWidth] = useState(320);
+    const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+    const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+    const [isResizingLeft, setIsResizingLeft] = useState(false);
+    const [isResizingRight, setIsResizingRight] = useState(false);
+
+    // Resize Handlers
+    const toggleResizingLeft = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsResizingLeft(prev => !prev);
+        setIsResizingRight(false); // Ensure only one active
+    }, []);
+
+    const toggleResizingRight = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsResizingRight(prev => !prev);
+        setIsResizingLeft(false); // Ensure only one active
+    }, []);
+
+    const stopResizing = useCallback(() => {
+        setIsResizingLeft(false);
+        setIsResizingRight(false);
+    }, []);
+
+    const onMouseMove = useCallback((e: MouseEvent) => {
+        if (isResizingLeft) {
+            const newWidth = Math.max(200, Math.min(600, e.clientX));
+            setLeftPanelWidth(newWidth);
+        }
+        if (isResizingRight) {
+            const newWidth = Math.max(200, Math.min(600, window.innerWidth - e.clientX));
+            setRightPanelWidth(newWidth);
+        }
+    }, [isResizingLeft, isResizingRight]);
+
+    // Attach global listeners
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Enter') stopResizing();
+        };
+
+        if (isResizingLeft || isResizingRight) {
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('click', stopResizing); // Click anywhere else stops it
+            window.addEventListener('keydown', onKeyDown);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('click', stopResizing);
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [isResizingLeft, isResizingRight, onMouseMove, stopResizing]);
+
     const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const { screenToFlowPosition, fitView } = useReactFlow();
@@ -194,7 +250,16 @@ const Flow = () => {
 
             {/* Top Bar */}
             <header className="h-14 bg-[#1f1f23] border-b border-[#000] flex items-center px-4 justify-between shrink-0 select-none">
-                <GardeniasLogo variant="full" theme="dark" className="h-10" />
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
+                        className="text-[#666] hover:text-[#ccc] transition-colors"
+                        title={isLeftPanelOpen ? "Close Sidebar" : "Open Sidebar"}
+                    >
+                        {isLeftPanelOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+                    </button>
+                    <GardeniasLogo variant="full" theme="dark" className="h-10" />
+                </div>
 
                 <div className="flex bg-[#121212] rounded p-0.5 gap-0.5">
                     <button className="px-3 py-0.5 text-[11px] font-medium bg-[#333] text-white rounded-[2px] shadow-sm">WORKFLOWS</button>
@@ -203,7 +268,7 @@ const Flow = () => {
                     <button className="px-3 py-0.5 text-[11px] font-medium bg-[#d97706] text-black rounded-[2px] shadow-sm">REPORT</button>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4">
                     <button
                         className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
                         onClick={runWorkflow}
@@ -211,20 +276,38 @@ const Flow = () => {
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
                         RUN
                     </button>
+                    <button
+                        onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
+                        className="text-[#666] hover:text-[#ccc] transition-colors"
+                        title={isRightPanelOpen ? "Close Inspector" : "Open Inspector"}
+                    >
+                        {isRightPanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+                    </button>
                 </div>
             </header>
 
             <div className="flex-1 flex overflow-hidden">
                 {/* Left Panel: Media Pool / Effects */}
-                <div className="w-[320px] flex flex-col border-r border-[#000] bg-[#1f1f23]">
-                    <div className="h-8 bg-[#2a2a2a] flex items-center px-3 border-b border-[#121212] text-xs font-semibold text-[#bbb]">
-                        GARDENS
+                {isLeftPanelOpen && (
+                    <div
+                        className="flex flex-col border-r border-[#000] bg-[#1f1f23] relative shrink-0"
+                        style={{ width: leftPanelWidth }}
+                    >
+                        <div className="h-8 bg-[#2a2a2a] flex items-center px-3 border-b border-[#121212] text-xs font-semibold text-[#bbb]">
+                            GARDENS
+                        </div>
+                        <Sidebar />
+
+                        {/* Resize Handle Right */}
+                        <div
+                            className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-[#d97706] transition-colors z-10 ${isResizingLeft ? 'bg-[#d97706] opacity-100' : 'opacity-0 hover:opacity-100'}`}
+                            onClick={toggleResizingLeft}
+                        />
                     </div>
-                    <Sidebar />
-                </div>
+                )}
 
                 {/* Center: Node Graph */}
-                <div className="flex-1 bg-[#121212] flex flex-col overflow-hidden">
+                <div className="flex-1 bg-[#121212] flex flex-col overflow-hidden min-w-0">
                     <div className="flex-1 relative overflow-hidden" onDrop={onDrop} onDragOver={onDragOver}>
                         <ReactFlow
                             nodes={nodes}
@@ -249,10 +332,23 @@ const Flow = () => {
                 </div>
 
                 {/* Right Panel: Inspector */}
-                <Inspector
-                    node={selectedNode}
-                    onUpdate={updateNodeData}
-                />
+                {isRightPanelOpen && (
+                    <div
+                        className="flex flex-col border-l border-[#000] bg-[#1f1f23] relative shrink-0"
+                        style={{ width: rightPanelWidth }}
+                    >
+                        {/* Resize Handle Left */}
+                        <div
+                            className={`absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-[#d97706] transition-colors z-10 -ml-0.5 ${isResizingRight ? 'bg-[#d97706] opacity-100' : 'opacity-0 hover:opacity-100'}`}
+                            onClick={toggleResizingRight}
+                        />
+
+                        <Inspector
+                            node={selectedNode}
+                            onUpdate={updateNodeData}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

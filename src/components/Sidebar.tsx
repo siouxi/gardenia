@@ -26,7 +26,7 @@ export const Sidebar = () => {
     const categories = ToolRegistry.getCategories();
 
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-        new Set(categories)
+        new Set()
     );
     const [searchTerm, setSearchTerm] = useState('');
 

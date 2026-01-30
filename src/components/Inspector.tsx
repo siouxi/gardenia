@@ -11,7 +11,7 @@ export const Inspector = ({ node, onUpdate }: InspectorProps) => {
     const [activeTab, setActiveTab] = useState<'inspector' | 'agent'>('inspector');
     const [chatInput, setChatInput] = useState('');
     const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([
-        { role: 'assistant', content: 'Hello! I am your Gardenia AI assistant. How can I help you with your workflow today?' }
+        { role: 'assistant', content: 'Hello! I am Carmilla, your assistant. How can I help you with your workflow today?' }
     ]);
 
     const handleSendMessage = () => {
@@ -25,7 +25,7 @@ export const Inspector = ({ node, onUpdate }: InspectorProps) => {
     };
 
     return (
-        <div className="w-[280px] flex flex-col border-l border-[#000] bg-[#1f1f23] h-full">
+        <div className="w-full flex flex-col border-l border-[#000] bg-[#1f1f23] h-full">
             {/* Tabs Header */}
             <div className="h-9 bg-[#2a2a2a] flex items-center border-b border-[#121212] select-none">
                 <button
@@ -39,7 +39,7 @@ export const Inspector = ({ node, onUpdate }: InspectorProps) => {
                     onClick={() => setActiveTab('agent')}
                     className={`flex-1 h-full text-[10px] font-bold uppercase tracking-wide flex items-center justify-center transition-colors ${activeTab === 'agent' ? 'bg-[#1f1f23] text-[#ddd] border-t-2 border-t-[#3b82f6]' : 'text-[#666] hover:bg-[#252529] hover:text-[#999]'}`}
                 >
-                    AI Agent
+                    Carmilla
                 </button>
             </div>
 
