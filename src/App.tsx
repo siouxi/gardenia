@@ -7,6 +7,7 @@ import { Terminal } from './components/Terminal';
 import { Inspector } from './components/Inspector';
 import { GardeniasLogo } from './components/GardeniasLogo';
 import { ResolveNode } from './components/ResolveNode';
+import { CodeEditor } from './components/CodeEditor';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { exportToJson, importFromJson } from './utils/fileHandler';
@@ -20,6 +21,7 @@ export type NodeData = {
     toolId?: string;
     toolData?: any;
     parameterValues?: Record<string, any>;
+    code?: string;
     [key: string]: any;
 };
 
@@ -39,6 +41,10 @@ const Flow = () => {
     const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
     const [isResizingLeft, setIsResizingLeft] = useState(false);
     const [isResizingRight, setIsResizingRight] = useState(false);
+
+    // Inspector State
+    const [inspectorTab, setInspectorTab] = useState<'inspector' | 'agent' | 'code'>('inspector'); // Keeping type but 'code' might be unused in inspector now
+    const [viewMode, setViewMode] = useState<'workflow' | 'plotting' | 'code' | 'report'>('workflow');
 
     // Resize Handlers
     const toggleResizingLeft = useCallback((e: React.MouseEvent) => {
@@ -131,7 +137,8 @@ const Flow = () => {
                     category: tool.category,
                     toolId: tool.id,
                     toolData: tool,
-                    parameterValues: {} // Initialize empty params
+                    parameterValues: {}, // Initialize empty params
+                    code: '# Hola Mundo'
                 },
             };
 
@@ -142,6 +149,15 @@ const Flow = () => {
 
     const onNodeClick = useCallback((_: React.MouseEvent, node: AppNode) => {
         setSelectedNodeId(node.id);
+        if (!isRightPanelOpen) setIsRightPanelOpen(true);
+    }, [isRightPanelOpen]);
+
+    const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: AppNode) => {
+        setSelectedNodeId(node.id);
+        setViewMode('code');
+        // Ensure inspector is open but maybe on 'inspector' tab to see params while coding?
+        // Or keep it as is.
+        setIsRightPanelOpen(true);
     }, []);
 
     const onPaneClick = useCallback(() => {
@@ -262,9 +278,19 @@ const Flow = () => {
                 </div>
 
                 <div className="flex bg-[#121212] rounded p-0.5 gap-0.5">
-                    <button className="px-3 py-0.5 text-[11px] font-medium bg-[#333] text-white rounded-[2px] shadow-sm">WORKFLOWS</button>
+                    <button
+                        onClick={() => setViewMode('workflow')}
+                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'workflow' ? 'bg-[#333] text-white' : 'hover:bg-[#222] text-[#888]'}`}
+                    >
+                        WORKFLOWS
+                    </button>
                     <button className="px-3 py-0.5 text-[11px] font-medium hover:bg-[#222] text-[#888] rounded-[2px] transition-colors">PLOTTING</button>
-                    <button className="px-3 py-0.5 text-[11px] font-medium hover:bg-[#222] text-[#888] rounded-[2px] transition-colors">CODE</button>
+                    <button
+                        onClick={() => setViewMode('code')}
+                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'code' ? 'bg-[#333] text-white' : 'hover:bg-[#222] text-[#888]'}`}
+                    >
+                        CODE
+                    </button>
                     <button className="px-3 py-0.5 text-[11px] font-medium bg-[#d97706] text-black rounded-[2px] shadow-sm">REPORT</button>
                 </div>
 
@@ -306,26 +332,40 @@ const Flow = () => {
                     </div>
                 )}
 
-                {/* Center: Node Graph */}
+                {/* Center: Node Graph or Code Editor */}
                 <div className="flex-1 bg-[#121212] flex flex-col overflow-hidden min-w-0">
-                    <div className="flex-1 relative overflow-hidden" onDrop={onDrop} onDragOver={onDragOver}>
-                        <ReactFlow
-                            nodes={nodes}
-                            edges={edges}
-                            onNodesChange={onNodesChange}
-                            onEdgesChange={onEdgesChange}
-                            onConnect={onConnect}
-                            onNodeClick={onNodeClick}
-                            onPaneClick={onPaneClick}
-                            nodeTypes={nodeTypes}
-                            fitView
-                            colorMode="dark"
-                            proOptions={{ hideAttribution: true }}
-                        >
-                            <Background gap={15} size={1} color="#222" />
-                            <Controls className="!bg-[#2a2a2a] !border-[#000] !fill-[#888] !rounded-[2px]" />
-                        </ReactFlow>
-                    </div>
+
+                    {viewMode === 'workflow' && (
+                        <div className="flex-1 relative overflow-hidden" onDrop={onDrop} onDragOver={onDragOver}>
+                            <ReactFlow
+                                nodes={nodes}
+                                edges={edges}
+                                onNodesChange={onNodesChange}
+                                onEdgesChange={onEdgesChange}
+                                onConnect={onConnect}
+                                onNodeClick={onNodeClick}
+                                onNodeDoubleClick={onNodeDoubleClick}
+                                onPaneClick={onPaneClick}
+                                nodeTypes={nodeTypes}
+                                fitView
+                                colorMode="dark"
+                                proOptions={{ hideAttribution: true }}
+                            >
+                                <Background gap={15} size={1} color="#222" />
+                                <Controls className="!bg-[#2a2a2a] !border-[#000] !fill-[#888] !rounded-[2px]" />
+                            </ReactFlow>
+                        </div>
+                    )}
+
+                    {viewMode === 'code' && (
+                        <div className="flex-1 relative overflow-hidden">
+                            <CodeEditor
+                                node={selectedNode}
+                                onUpdate={updateNodeData}
+                            />
+                        </div>
+                    )}
+
 
                     {/* Bottom Time/Log Panel */}
                     <Terminal />
@@ -346,6 +386,8 @@ const Flow = () => {
                         <Inspector
                             node={selectedNode}
                             onUpdate={updateNodeData}
+                            activeTab={inspectorTab}
+                            onTabChange={setInspectorTab}
                         />
                     </div>
                 )}

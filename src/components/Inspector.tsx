@@ -5,10 +5,11 @@ import { useState } from 'react';
 interface InspectorProps {
     node: any; // Using any for now to avoid circular deps, but technically AppNode
     onUpdate: (nodeId: string, data: any) => void;
+    activeTab: 'inspector' | 'agent' | 'code';
+    onTabChange: (tab: 'inspector' | 'agent' | 'code') => void;
 }
 
-export const Inspector = ({ node, onUpdate }: InspectorProps) => {
-    const [activeTab, setActiveTab] = useState<'inspector' | 'agent'>('inspector');
+export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorProps) => {
     const [chatInput, setChatInput] = useState('');
     const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([
         { role: 'assistant', content: 'Hello! I am Carmilla, your assistant. How can I help you with your workflow today?' }
@@ -29,14 +30,14 @@ export const Inspector = ({ node, onUpdate }: InspectorProps) => {
             {/* Tabs Header */}
             <div className="h-9 bg-[#2a2a2a] flex items-center border-b border-[#121212] select-none">
                 <button
-                    onClick={() => setActiveTab('inspector')}
+                    onClick={() => onTabChange('inspector')}
                     className={`flex-1 h-full text-[10px] font-bold uppercase tracking-wide flex items-center justify-center transition-colors ${activeTab === 'inspector' ? 'bg-[#1f1f23] text-[#ddd] border-t-2 border-t-[#d97706]' : 'text-[#666] hover:bg-[#252529] hover:text-[#999]'}`}
                 >
                     Inspector
                 </button>
                 <div className="w-[1px] h-4 bg-[#111]" />
                 <button
-                    onClick={() => setActiveTab('agent')}
+                    onClick={() => onTabChange('agent')}
                     className={`flex-1 h-full text-[10px] font-bold uppercase tracking-wide flex items-center justify-center transition-colors ${activeTab === 'agent' ? 'bg-[#1f1f23] text-[#ddd] border-t-2 border-t-[#3b82f6]' : 'text-[#666] hover:bg-[#252529] hover:text-[#999]'}`}
                 >
                     Carmilla
