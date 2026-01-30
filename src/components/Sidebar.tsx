@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import {
     InputIcon,
@@ -8,49 +8,25 @@ import {
     VisualizationIcon,
     UtilitiesIcon
 } from './BioinformaticsIcons';
+import { ToolRegistry } from '../registry/tools';
 
-interface Category {
-    name: string;
-    nodes: string[];
-    Icon: React.FC<{ size?: number; className?: string }>;
-}
-
-const categories: Category[] = [
-    {
-        name: 'Input',
-        nodes: ['File Input', 'FASTQ Reader', 'BAM Reader', 'Database Connection'],
-        Icon: InputIcon
-    },
-    {
-        name: 'QC',
-        nodes: ['FastQC', 'MultiQC', 'Quality Filter', 'Adapter Detection'],
-        Icon: QCIcon
-    },
-    {
-        name: 'Preprocessing',
-        nodes: ['Trimmomatic', 'Cutadapt', 'Normalization', 'Deduplication'],
-        Icon: PreprocessingIcon
-    },
-    {
-        name: 'Statistical Analysis',
-        nodes: ['DESeq2', 'EdgeR', 'Limma', 'T-Test', 'ANOVA'],
-        Icon: StatisticalAnalysisIcon
-    },
-    {
-        name: 'Visualization',
-        nodes: ['Heatmap', 'Volcano Plot', 'PCA Plot', 'Box Plot', 'Histogram'],
-        Icon: VisualizationIcon
-    },
-    {
-        name: 'Utilities',
-        nodes: ['Samtools', 'File Converter', 'Data Export', 'Merge Files'],
-        Icon: UtilitiesIcon
-    }
-];
+// Icon mapping
+const CategoryIcons: Record<string, React.FC<{ size?: number; className?: string }>> = {
+    'Input': InputIcon,
+    'QC': QCIcon,
+    'Preprocessing': PreprocessingIcon,
+    'Statistical Analysis': StatisticalAnalysisIcon,
+    'Visualization': VisualizationIcon,
+    'Utilities': UtilitiesIcon
+};
 
 export const Sidebar = () => {
+    // Flatten tools with their category data for easy rendering
+    const allTools = ToolRegistry.getAll();
+    const categories = ToolRegistry.getCategories();
+
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-        new Set(categories.map(cat => cat.name))
+        new Set(categories)
     );
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -66,15 +42,24 @@ export const Sidebar = () => {
         });
     };
 
-    // Filter categories and nodes based on search term
-    const filteredCategories = categories.map(category => ({
-        ...category,
-        nodes: category.nodes.filter(node =>
-            node.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-    })).filter(category => category.nodes.length > 0);
+    // Filter logic
+    const displayedData = useMemo(() => {
+        const lowerSearch = searchTerm.toLowerCase();
 
-    const categoriesToDisplay = searchTerm ? filteredCategories : categories;
+        return categories.map(catName => {
+            const toolsInCat = allTools.filter(t =>
+                t.category === catName &&
+                t.name.toLowerCase().includes(lowerSearch)
+            );
+
+            return {
+                name: catName,
+                tools: toolsInCat,
+                Icon: CategoryIcons[catName] || InputIcon
+            };
+        }).filter(group => group.tools.length > 0);
+
+    }, [searchTerm, allTools, categories]);
 
     return (
         <div className="flex-1 overflow-y-auto bg-[#1f1f23] flex flex-col">
@@ -95,7 +80,7 @@ export const Sidebar = () => {
             {/* Categories */}
             <div className="flex-1 overflow-y-auto">
                 <div className="p-2 space-y-1">
-                    {categoriesToDisplay.map(category => (
+                    {displayedData.map(category => (
                         <div key={category.name}>
                             {/* Category Header */}
                             <div
@@ -112,17 +97,18 @@ export const Sidebar = () => {
                             {/* Category Nodes */}
                             {expandedCategories.has(category.name) && (
                                 <div className="space-y-0.5">
-                                    {category.nodes.map(node => (
+                                    {category.tools.map(tool => (
                                         <div
-                                            key={node}
+                                            key={tool.id}
                                             className="group flex items-center gap-3 px-3 py-2 rounded-[2px] hover:bg-[#2a2a2a] cursor-grab transition-colors border border-transparent hover:border-[#333]"
+                                            title={tool.description}
                                         >
                                             <div className="w-8 h-8 rounded bg-[#18181b] border border-[#2a2a2a] flex items-center justify-center text-[#666] group-hover:text-[#34d399] group-hover:border-[#34d399]/50 transition-all font-mono text-[10px]">
-                                                {node.substring(0, 2).toUpperCase()}
+                                                {tool.name.substring(0, 2).toUpperCase()}
                                             </div>
                                             <div className="flex flex-col">
                                                 <span className="text-[12px] font-medium text-[#ccc] group-hover:text-white leading-none">
-                                                    {node}
+                                                    {tool.name}
                                                 </span>
                                                 <span className="text-[10px] text-[#666] leading-none mt-1">
                                                     {category.name}
@@ -139,3 +125,4 @@ export const Sidebar = () => {
         </div>
     );
 };
+
