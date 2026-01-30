@@ -9,6 +9,9 @@ import { GardeniasLogo } from './components/GardeniasLogo';
 import { ResolveNode } from './components/ResolveNode';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
+import { exportToJson, importFromJson } from './utils/fileHandler';
+import { getLayoutedElements } from './utils/layout';
+import { Download, Upload } from 'lucide-react';
 
 // Define the custom node type for our app
 export type NodeData = {
@@ -31,7 +34,7 @@ const initialEdges: any[] = [];
 const Flow = () => {
     const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-    const { screenToFlowPosition } = useReactFlow();
+    const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
     const nodeTypes = useMemo<NodeTypes>(() => ({ resolve: ResolveNode }), []);
@@ -106,6 +109,37 @@ const Flow = () => {
             .catch((err: any) => console.error(err));
     };
 
+    const onExport = useCallback(() => {
+        const workflowData = {
+            nodes,
+            edges,
+            version: '1.0.0'
+        };
+        exportToJson(workflowData, `workflow-${Date.now()}.json`);
+    }, [nodes, edges]);
+
+    const onImport = useCallback(async () => {
+        try {
+            const data = await importFromJson();
+            if (data.nodes && data.edges) {
+                // Apply auto-layout
+                const layouted = getLayoutedElements(data.nodes, data.edges);
+                setNodes(layouted.nodes as AppNode[]);
+                setEdges(layouted.edges);
+
+                // Fit view after layout
+                setTimeout(() => {
+                    fitView({ duration: 800 });
+                }, 100);
+            }
+        } catch (error) {
+            console.error('Failed to import workflow:', error);
+            alert('Failed to import workflow. Checked console for details.');
+        }
+    }, [setNodes, setEdges]);
+
+    const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+
     // Derived state for the inspector
     const selectedNode = useMemo(() =>
         nodes.find((n) => n.id === selectedNodeId) || null,
@@ -113,6 +147,51 @@ const Flow = () => {
 
     return (
         <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#18181b] text-[#ccc] font-sans">
+            {/* Menu Bar */}
+            <div className="h-8 bg-[#1f1f23] border-b border-[#111] flex items-center px-1 shrink-0 select-none z-50">
+                <div className="relative">
+                    <button
+                        className={`px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors ${isFileMenuOpen ? 'bg-[#333]' : ''}`}
+                        onClick={() => setIsFileMenuOpen(!isFileMenuOpen)}
+                    >
+                        File
+                    </button>
+                    {isFileMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsFileMenuOpen(false)} />
+                            <div className="absolute top-full left-0 mt-1 w-48 bg-[#2a2a2a] border border-[#333] rounded-md shadow-xl py-1 z-50 flex flex-col">
+                                <button
+                                    className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2"
+                                    onClick={() => {
+                                        onImport();
+                                        setIsFileMenuOpen(false);
+                                    }}
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Import Workflow...
+                                </button>
+                                <button
+                                    className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2"
+                                    onClick={() => {
+                                        onExport();
+                                        setIsFileMenuOpen(false);
+                                    }}
+                                >
+                                    <Upload className="w-3.5 h-3.5" />
+                                    Export Workflow
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+                <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">Edit</button>
+                <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">View</button>
+                <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">Help</button>
+
+                {/* Window Drag Region (fake) */}
+                <div className="flex-1 h-full drag-region" style={{ WebkitAppRegion: 'drag' } as any} />
+            </div>
+
             {/* Top Bar */}
             <header className="h-14 bg-[#1f1f23] border-b border-[#000] flex items-center px-4 justify-between shrink-0 select-none">
                 <GardeniasLogo variant="full" theme="dark" className="h-10" />
@@ -124,13 +203,15 @@ const Flow = () => {
                     <button className="px-3 py-0.5 text-[11px] font-medium bg-[#d97706] text-black rounded-[2px] shadow-sm">REPORT</button>
                 </div>
 
-                <button
-                    className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
-                    onClick={runWorkflow}
-                >
-                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                    RUN
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
+                        onClick={runWorkflow}
+                    >
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                        RUN
+                    </button>
+                </div>
             </header>
 
             <div className="flex-1 flex overflow-hidden">
