@@ -7,6 +7,7 @@ import { Terminal } from './components/Terminal';
 import { Inspector } from './components/Inspector';
 import { GardeniasLogo } from './components/GardeniasLogo';
 import { ResolveNode } from './components/ResolveNode';
+import { PostItNode } from './components/PostItNode';
 import { CodeEditor } from './components/CodeEditor';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
@@ -99,7 +100,10 @@ const Flow = () => {
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-    const nodeTypes = useMemo<NodeTypes>(() => ({ resolve: ResolveNode }), []);
+    const nodeTypes = useMemo<NodeTypes>(() => ({
+        resolve: ResolveNode,
+        postit: PostItNode
+    }), []);
 
     const onConnect = useCallback(
         (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -128,16 +132,20 @@ const Flow = () => {
                 y: event.clientY,
             });
 
+            // Determine node type based on tool ID
+            const nodeType = toolId === 'post-it' ? 'postit' : 'resolve';
+            const nodeId = `${toolId}-${Date.now()}`;
+
             const newNode: AppNode = {
-                id: `${toolId}-${Date.now()}`,
-                type: 'resolve',
+                id: nodeId,
+                type: nodeType,
                 position,
                 data: {
                     label: tool.name,
                     category: tool.category,
                     toolId: tool.id,
                     toolData: tool,
-                    parameterValues: {}, // Initialize empty params
+                    parameterValues: {},
                     code: '# Hola Mundo'
                 },
             };
@@ -153,6 +161,11 @@ const Flow = () => {
     }, [isRightPanelOpen]);
 
     const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: AppNode) => {
+        // Don't open code editor for post-it notes
+        if (node.type === 'postit') {
+            return;
+        }
+
         setSelectedNodeId(node.id);
         setViewMode('code');
         // Ensure inspector is open but maybe on 'inspector' tab to see params while coding?
