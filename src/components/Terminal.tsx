@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Terminal as TerminalIcon, ChevronUp, ChevronDown, Monitor, Play, X } from 'lucide-react';
-import { RCommandResult } from '../types/r-types';
+import { RCommandResult, PythonCommandResult } from '../types/r-types';
 
-type TabType = 'console' | 'terminal' | 'r';
+type TabType = 'console' | 'terminal' | 'r' | 'python';
 
 interface RHistoryEntry {
     command: string;
@@ -20,6 +20,10 @@ declare global {
             stopRSession: () => Promise<{ success: boolean }>;
             getRSessionStatus: () => Promise<{ active: boolean }>;
             executeShellCommand: (command: string) => Promise<RCommandResult>;
+            startPythonSession: () => Promise<{ success: boolean; version?: string; error?: string }>;
+            executePythonCommand: (command: string) => Promise<PythonCommandResult>;
+            stopPythonSession: () => Promise<{ success: boolean }>;
+            getPythonSessionStatus: () => Promise<{ active: boolean }>;
         };
     }
 }
@@ -34,33 +38,54 @@ export const Terminal = () => {
     const [rVersion, setRVersion] = useState<string>('');
     const [shellInput, setShellInput] = useState('');
     const [shellHistory, setShellHistory] = useState<RHistoryEntry[]>([]);
+
+    // Python State
+    const [pythonInput, setPythonInput] = useState('');
+    const [pythonHistory, setPythonHistory] = useState<RHistoryEntry[]>([]);
+    const [pythonSessionActive, setPythonSessionActive] = useState(false);
+    const [pythonSessionLoading, setPythonSessionLoading] = useState(false);
+    const [pythonVersion, setPythonVersion] = useState<string>('');
+
     const outputRef = useRef<HTMLDivElement>(null);
 
     const [consoleLogs, setConsoleLogs] = useState<string[]>([
-        "[System] Gardenia Engine Ready...",
-        "[System] Connected to Python 3.10.12",
-        "[Info] Detecting R installation..."
+        "[System] Gardenia Engine Ready..."
     ]);
 
-    // Auto-start R session on mount
+    // Auto-start R and Python sessions on mount
     useEffect(() => {
-        const startRSessionAuto = async () => {
+        const startSessions = async () => {
+            // Start R
             try {
                 const result = await window.electronAPI.startRSession();
-                if (result.success && result.version) {
-                    setRVersion(result.version);
+                if (result.success) {
+                    setRVersion(result.version || 'Detected');
                     setRSessionActive(true); // Keep session active
                     setConsoleLogs(prev => [
                         ...prev.slice(0, -1), // Remove "Detecting R installation..."
-                        `[System] R ${result.version} detected and session started`,
-                        "[Info] R session ready for commands",
-                        "[Info] Waiting for workflow execution..."
+                        `[System] R ${result.version || 'Session'} detected and session started`,
                     ]);
+
+                    // Get R working directory
+                    try {
+                        const wdResult = await window.electronAPI.executeRCommand('getwd()');
+                        if (wdResult.status === 'success' && wdResult.output) {
+                            // Extract the working directory from R output (usually in quotes)
+                            const wdMatch = wdResult.output.match(/\[1\]\s+"(.+)"/);
+                            const workingDir = wdMatch ? wdMatch[1] : wdResult.output.trim();
+
+                            setConsoleLogs(prev => [
+                                ...prev,
+                                `[Info] R working directory: ${workingDir}`
+                            ]);
+                        }
+                    } catch (wdError) {
+                        console.error('Failed to get R working directory:', wdError);
+                    }
                 } else {
                     setConsoleLogs(prev => [
                         ...prev.slice(0, -1),
                         "[Warning] R not detected or failed to start",
-                        "[Info] Waiting for workflow execution..."
                     ]);
                 }
             } catch (error) {
@@ -68,11 +93,38 @@ export const Terminal = () => {
                 setConsoleLogs(prev => [
                     ...prev.slice(0, -1),
                     "[Warning] R session auto-start failed",
-                    "[Info] Waiting for workflow execution..."
+                ]);
+            }
+
+            // Start Python
+            try {
+                setConsoleLogs(prev => [...prev, "[Info] Detecting Python installation..."]);
+                const result = await window.electronAPI.startPythonSession();
+                if (result.success && result.version) {
+                    setPythonVersion(result.version);
+                    setPythonSessionActive(true);
+                    setConsoleLogs(prev => [
+                        ...prev,
+                        `[System] Python ${result.version} detected and session started`,
+                        "[Info] Engines ready for workflow execution..."
+                    ]);
+                } else {
+                    setConsoleLogs(prev => [
+                        ...prev,
+                        "[Warning] Python not detected or failed to start",
+                        "[Info] Ready for workflow execution (limited functionality)..."
+                    ]);
+                }
+            } catch (error) {
+                console.error('Failed to start Python session:', error);
+                setConsoleLogs(prev => [
+                    ...prev,
+                    "[Warning] Python session auto-start failed",
+                    "[Info] Ready for workflow execution (limited functionality)..."
                 ]);
             }
         };
-        startRSessionAuto();
+        startSessions();
     }, []);
 
     // Auto-scroll to bottom when new output arrives
@@ -80,7 +132,7 @@ export const Terminal = () => {
         if (outputRef.current) {
             outputRef.current.scrollTop = outputRef.current.scrollHeight;
         }
-    }, [rHistory]);
+    }, [rHistory, pythonHistory, shellHistory]);
 
     const startRSession = async () => {
         setRSessionLoading(true);
@@ -207,6 +259,84 @@ export const Terminal = () => {
         }
     };
 
+    // Python Functions
+    const startPythonSession = async () => {
+        setPythonSessionLoading(true);
+        try {
+            const result = await window.electronAPI.startPythonSession();
+            if (result.success) {
+                setPythonSessionActive(true);
+                const version = result.version || pythonVersion;
+                if (version) {
+                    setPythonVersion(version);
+                }
+                setPythonHistory([{
+                    command: '# Session Started',
+                    output: `Python session initialized successfully${version ? ` (Python ${version})` : ''}`,
+                    status: 'success',
+                    timestamp: new Date()
+                }]);
+            } else {
+                setPythonHistory([{
+                    command: '# Session Start Failed',
+                    output: `Failed to start Python: ${result.error}`,
+                    status: 'error',
+                    timestamp: new Date()
+                }]);
+            }
+        } catch (error) {
+            console.error('Failed to start Python session:', error);
+        } finally {
+            setPythonSessionLoading(false);
+        }
+    };
+
+    const stopPythonSession = async () => {
+        try {
+            await window.electronAPI.stopPythonSession();
+            setPythonSessionActive(false);
+            setPythonHistory(prev => [...prev, {
+                command: '# Session Stopped',
+                output: 'Python session terminated',
+                status: 'success',
+                timestamp: new Date()
+            }]);
+        } catch (error) {
+            console.error('Failed to stop Python session:', error);
+        }
+    };
+
+    const executePythonCommand = async () => {
+        if (!pythonInput.trim() || !pythonSessionActive) return;
+
+        const command = pythonInput.trim();
+        setPythonInput('');
+
+        try {
+            const result = await window.electronAPI.executePythonCommand(command);
+
+            setPythonHistory(prev => [...prev, {
+                command,
+                output: result.output || (result.error ? `Error: ${result.error}` : ''),
+                status: result.status,
+                timestamp: new Date()
+            }]);
+        } catch (error) {
+            setPythonHistory(prev => [...prev, {
+                command,
+                output: `Error: ${error}`,
+                status: 'error',
+                timestamp: new Date()
+            }]);
+        }
+    };
+
+    const handlePythonKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            executePythonCommand();
+        }
+    };
+
     return (
         <div
             className={`bg-[#1f1f23] border-t border-[#000] transition-all duration-300 flex flex-col shrink-0 ${isOpen ? 'h-72' : 'h-9'}`}
@@ -257,6 +387,18 @@ export const Terminal = () => {
                             <div className="flex items-center gap-1.5">
                                 <span className="font-bold">R</span>
                                 {rSessionActive && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>}
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('python')}
+                            className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'python'
+                                ? 'bg-[#2a2a2a] text-yellow-400 border border-slate-600'
+                                : 'bg-transparent text-slate-400 hover:text-slate-300'
+                                }`}
+                        >
+                            <div className="flex items-center gap-1.5">
+                                <span className="font-bold">PY</span>
+                                {pythonSessionActive && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>}
                             </div>
                         </button>
                     </div>
@@ -333,6 +475,41 @@ export const Terminal = () => {
                         ))}
                     </>
                 )}
+
+                {activeTab === 'python' && (
+                    <>
+                        {!pythonSessionActive && pythonHistory.length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                                <div className="text-center">
+                                    <p className="mb-2">Python session not started</p>
+                                    <button
+                                        onClick={startPythonSession}
+                                        disabled={pythonSessionLoading}
+                                        className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-2 mx-auto"
+                                    >
+                                        <Play size={14} />
+                                        {pythonSessionLoading ? 'Starting Python...' : 'Start Python Session'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {pythonHistory.map((entry, i) => (
+                            <div key={i} className="mb-2">
+                                <div className="text-yellow-400">
+                                    <span className="text-slate-500 mr-2">PY&gt;</span>
+                                    {entry.command}
+                                </div>
+                                {entry.output && (
+                                    <div className={`ml-4 whitespace-pre-wrap ${entry.status === 'error' ? 'text-red-400' : 'text-slate-300'
+                                        }`}>
+                                        {entry.output}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </>
+                )}
             </div>
 
             {/* R Input Field */}
@@ -388,6 +565,38 @@ export const Terminal = () => {
                         className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Run
+                    </button>
+                </div>
+            )}
+
+            {/* Python Input Field */}
+            {activeTab === 'python' && pythonSessionActive && (
+                <div className="border-t border-slate-700 p-2 bg-slate-800/50 flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-1">
+                        <span className="text-yellow-400 font-mono text-xs">PY&gt;</span>
+                        <input
+                            type="text"
+                            value={pythonInput}
+                            onChange={(e) => setPythonInput(e.target.value)}
+                            onKeyDown={handlePythonKeyDown}
+                            placeholder="Enter Python command..."
+                            className="flex-1 bg-transparent text-slate-300 text-xs font-mono outline-none"
+                            autoFocus
+                        />
+                    </div>
+                    <button
+                        onClick={executePythonCommand}
+                        disabled={!pythonInput.trim()}
+                        className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Run
+                    </button>
+                    <button
+                        onClick={stopPythonSession}
+                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                    >
+                        <X size={12} />
+                        Stop
                     </button>
                 </div>
             )}

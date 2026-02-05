@@ -10,5 +10,10 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     getRSessionStatus: () => electron_1.ipcRenderer.invoke('r-session-status'),
     // Shell command API
     executeShellCommand: (command) => electron_1.ipcRenderer.invoke('execute-shell-command', command),
+    // Python Session APIs
+    startPythonSession: () => electron_1.ipcRenderer.invoke('start-python-session'),
+    executePythonCommand: (command) => electron_1.ipcRenderer.invoke('execute-python-command', command),
+    stopPythonSession: () => electron_1.ipcRenderer.invoke('stop-python-session'),
+    getPythonSessionStatus: () => electron_1.ipcRenderer.invoke('python-session-status'),
 });
 //# sourceMappingURL=preload.js.map

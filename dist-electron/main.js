@@ -31,41 +31,58 @@ class RSessionManager {
                 resolve({ success: true, version: 'already running' });
                 return;
             }
-            // Start R with --vanilla flag to prevent loading .Rprofile
-            // --interactive for interactive mode, --no-save to not save workspace
-            this.rProcess = (0, child_process_1.spawn)('R', ['--vanilla', '--interactive', '--no-save', '--quiet']);
-            let initialOutput = '';
-            const onData = (data) => {
-                const output = data.toString();
-                initialOutput += output;
-                // Check if R is ready (when we see the prompt)
-                if (output.includes('>')) {
-                    this.rProcess.stdout.off('data', onData);
-                    // Extract version if available
-                    const versionMatch = initialOutput.match(/R version ([\d.]+)/);
-                    const version = versionMatch ? versionMatch[1] : undefined;
-                    resolve({ success: true, version });
-                }
-            };
-            this.rProcess.stdout.on('data', onData);
-            this.rProcess.stderr.on('data', (data) => {
-                console.error('R stderr:', data.toString());
-            });
-            this.rProcess.on('error', (error) => {
-                console.error('R process error:', error);
-                this.rProcess = null;
+            console.log('Starting R session...');
+            try {
+                // Start R with --vanilla flag to prevent loading .Rprofile
+                // --interactive for interactive mode, --no-save to not save workspace
+                this.rProcess = (0, child_process_1.spawn)('R', ['--vanilla', '--interactive', '--no-save']);
+                let initialOutput = '';
+                let resolved = false;
+                const onData = (data) => {
+                    const output = data.toString();
+                    initialOutput += output;
+                    console.log('R output:', output);
+                    // Check if R is ready (when we see the prompt)
+                    if (output.includes('>') && !resolved) {
+                        resolved = true;
+                        this.rProcess.stdout.off('data', onData);
+                        // Extract version if available
+                        const versionMatch = initialOutput.match(/R version ([\d.]+)/);
+                        const version = versionMatch ? versionMatch[1] : undefined;
+                        console.log('R session started successfully, version:', version);
+                        resolve({ success: true, version });
+                    }
+                };
+                this.rProcess.stdout.on('data', onData);
+                this.rProcess.stderr.on('data', (data) => {
+                    console.error('R stderr:', data.toString());
+                });
+                this.rProcess.on('error', (error) => {
+                    console.error('R process error:', error);
+                    if (!resolved) {
+                        resolved = true;
+                        this.rProcess = null;
+                        resolve({ success: false, error: error.message });
+                    }
+                });
+                this.rProcess.on('close', (code) => {
+                    console.log('R process exited with code:', code);
+                    this.rProcess = null;
+                });
+                // Timeout after 10 seconds (increased from 5)
+                setTimeout(() => {
+                    if (!resolved) {
+                        resolved = true;
+                        console.error('R startup timeout after 10 seconds');
+                        console.error('Output received:', initialOutput);
+                        resolve({ success: false, error: 'R startup timeout' });
+                    }
+                }, 10000);
+            }
+            catch (error) {
+                console.error('Failed to spawn R process:', error);
                 resolve({ success: false, error: error.message });
-            });
-            this.rProcess.on('close', (code) => {
-                console.log('R process exited with code:', code);
-                this.rProcess = null;
-            });
-            // Timeout after 5 seconds
-            setTimeout(() => {
-                if (this.rProcess && !this.rProcess.killed) {
-                    resolve({ success: false, error: 'R startup timeout' });
-                }
-            }, 5000);
+            }
         });
     }
     executeCommand(command) {
@@ -226,7 +243,170 @@ electron_1.app.on('ready', () => {
             }, 30000);
         });
     }));
+    // Python Session IPC Handlers
+    electron_1.ipcMain.handle('start-python-session', () => __awaiter(void 0, void 0, void 0, function* () {
+        const result = yield pythonSession.start();
+        return result;
+    }));
+    electron_1.ipcMain.handle('execute-python-command', (event, command) => __awaiter(void 0, void 0, void 0, function* () {
+        const result = yield pythonSession.executeCommand(command);
+        return result;
+    }));
+    electron_1.ipcMain.handle('stop-python-session', () => __awaiter(void 0, void 0, void 0, function* () {
+        pythonSession.stop();
+        return { success: true };
+    }));
+    electron_1.ipcMain.handle('python-session-status', () => __awaiter(void 0, void 0, void 0, function* () {
+        return { active: pythonSession.isActive() };
+    }));
 });
+// Python Session Manager
+class PythonSessionManager {
+    constructor() {
+        this.pythonProcess = null;
+        this.outputBuffer = '';
+        this.errorBuffer = '';
+    }
+    start() {
+        return new Promise((resolve) => {
+            if (this.pythonProcess) {
+                resolve({ success: true, version: 'already running' });
+                return;
+            }
+            console.log('Starting Python session...');
+            try {
+                // Start Python in interactive mode (-i) and unbuffered (-u)
+                this.pythonProcess = (0, child_process_1.spawn)('python3', ['-i', '-u']);
+                let initialOutput = '';
+                let resolved = false;
+                const onData = (data) => {
+                    const output = data.toString();
+                    initialOutput += output;
+                    console.log('Python output:', output);
+                    // Check if Python is ready (when we see the prompt)
+                    if (output.includes('>>>') && !resolved) {
+                        resolved = true;
+                        this.pythonProcess.stdout.off('data', onData);
+                        this.pythonProcess.stderr.off('data', onData); // Python often treats interactive banner as stderr
+                        // Extract version if available
+                        const versionMatch = initialOutput.match(/Python ([\d.]+)/);
+                        const version = versionMatch ? versionMatch[1] : undefined;
+                        console.log('Python session started successfully, version:', version);
+                        resolve({ success: true, version });
+                    }
+                };
+                this.pythonProcess.stdout.on('data', onData);
+                // Python interactive mode often writes banner to stderr
+                this.pythonProcess.stderr.on('data', onData);
+                this.pythonProcess.on('error', (error) => {
+                    console.error('Python process error:', error);
+                    if (!resolved) {
+                        resolved = true;
+                        this.pythonProcess = null;
+                        resolve({ success: false, error: error.message });
+                    }
+                });
+                this.pythonProcess.on('close', (code) => {
+                    console.log('Python process exited with code:', code);
+                    this.pythonProcess = null;
+                });
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    if (!resolved) {
+                        resolved = true;
+                        console.error('Python startup timeout after 10 seconds');
+                        console.error('Output received:', initialOutput);
+                        resolve({ success: false, error: 'Python startup timeout' });
+                    }
+                }, 10000);
+            }
+            catch (error) {
+                console.error('Failed to spawn Python process:', error);
+                resolve({ success: false, error: error.message });
+            }
+        });
+    }
+    executeCommand(command) {
+        return new Promise((resolve) => {
+            if (!this.pythonProcess) {
+                resolve({ status: 'error', output: '', error: 'Python session not started' });
+                return;
+            }
+            this.outputBuffer = '';
+            this.errorBuffer = '';
+            const onStdout = (data) => {
+                this.outputBuffer += data.toString();
+            };
+            const onStderr = (data) => {
+                // In interactive mode, prompts often come through stderr, ignore them for error detection
+                const str = data.toString();
+                if (!str.trim().endsWith('>>>') && !str.trim().endsWith('...')) {
+                    this.errorBuffer += str;
+                }
+                // Also capture stderr as output because things like warnings appear there
+                this.outputBuffer += str;
+            };
+            this.pythonProcess.stdout.on('data', onStdout);
+            this.pythonProcess.stderr.on('data', onStderr);
+            // Write command to Python process
+            this.pythonProcess.stdin.write(command + '\n');
+            // Heuristic to detect end of command execution:
+            // Since Python interactive shell echoes prompts, we wait for '>>> '
+            // This is non-trivial strictly with streams, but for a basic integration this polling/timeout approach
+            // combined with prompt detection is often used.
+            // A more robust way is to wrap execution, but let's try reading streams first.
+            const checkInterval = setInterval(() => {
+                if (this.outputBuffer.trim().endsWith('>>>') || this.outputBuffer.trim().endsWith('...')) {
+                    clearInterval(checkInterval);
+                    cleanup();
+                    // Clean up the output
+                    // Remove the command echo (if any) and the trailing prompt
+                    let cleanOutput = this.outputBuffer;
+                    // Remove the user's command if it was echoed
+                    if (cleanOutput.startsWith(command)) {
+                        cleanOutput = cleanOutput.substring(command.length);
+                    }
+                    // Remove the prompt
+                    cleanOutput = cleanOutput.replace(/>>>\s*$/, '').replace(/\.\.\.\s*$/, '').trim();
+                    const hasError = this.errorBuffer.length > 0; // Simple error check
+                    resolve({
+                        status: hasError ? 'error' : 'success',
+                        output: cleanOutput,
+                        error: hasError ? this.errorBuffer : undefined
+                    });
+                }
+            }, 50);
+            const cleanup = () => {
+                this.pythonProcess.stdout.off('data', onStdout);
+                this.pythonProcess.stderr.off('data', onStderr);
+            };
+            // Timeout safety
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                cleanup();
+                if (!this.outputBuffer.trim().endsWith('>>>')) {
+                    // We timed out waiting for prompt
+                    resolve({
+                        status: 'error',
+                        output: this.outputBuffer,
+                        error: 'Command execution timed out or prompt not found'
+                    });
+                }
+            }, 5000); // 5s timeout for simple commands
+        });
+    }
+    stop() {
+        if (this.pythonProcess) {
+            this.pythonProcess.stdin.write('exit()\n');
+            this.pythonProcess.kill();
+            this.pythonProcess = null;
+        }
+    }
+    isActive() {
+        return this.pythonProcess !== null && !this.pythonProcess.killed;
+    }
+}
+const pythonSession = new PythonSessionManager();
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         electron_1.app.quit();

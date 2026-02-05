@@ -15,3 +15,9 @@ export interface RHistoryEntry {
     timestamp: Date;
     status: 'success' | 'error';
 }
+
+export interface PythonCommandResult {
+    status: 'success' | 'error';
+    output: string;
+    error?: string;
+}

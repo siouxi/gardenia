@@ -11,4 +11,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Shell command API
     executeShellCommand: (command: string) => ipcRenderer.invoke('execute-shell-command', command),
+
+    // Python Session APIs
+    startPythonSession: () => ipcRenderer.invoke('start-python-session'),
+    executePythonCommand: (command: string) => ipcRenderer.invoke('execute-python-command', command),
+    stopPythonSession: () => ipcRenderer.invoke('stop-python-session'),
+    getPythonSessionStatus: () => ipcRenderer.invoke('python-session-status'),
 });
