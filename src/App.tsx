@@ -63,7 +63,7 @@ const Flow = () => {
 
     // Inspector State
     const [inspectorTab, setInspectorTab] = useState<'inspector' | 'agent' | 'code'>('inspector'); // Keeping type but 'code' might be unused in inspector now
-    const [viewMode, setViewMode] = useState<'workflow' | 'plotting' | 'code' | 'report'>('workflow');
+    const [viewMode, setViewMode] = useState<'workflow' | 'data' | 'gallery' | 'code' | 'report'>('workflow');
 
     // Resize Handlers
     const toggleResizingLeft = useCallback((e: React.MouseEvent) => {
@@ -517,7 +517,18 @@ const Flow = () => {
                     >
                         WORKFLOWS
                     </button>
-                    <button className="px-3 py-0.5 text-[11px] font-medium hover:bg-[#222] text-[#888] rounded-[2px] transition-colors">PLOTTING</button>
+                    <button
+                        onClick={() => setViewMode('data')}
+                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'data' ? 'bg-[#333] text-white' : 'hover:bg-[#222] text-[#888]'}`}
+                    >
+                        DATA
+                    </button>
+                    <button
+                        onClick={() => setViewMode('gallery')}
+                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'gallery' ? 'bg-[#333] text-white' : 'hover:bg-[#222] text-[#888]'}`}
+                    >
+                        GALLERY
+                    </button>
                     <button
                         onClick={() => !isCodeDisabled && setViewMode('code')}
                         disabled={isCodeDisabled}
@@ -602,6 +613,18 @@ const Flow = () => {
                                 <Background gap={15} size={1} color="#222" />
                                 <Controls className="!bg-[#2a2a2a] !border-[#000] !fill-[#888] !rounded-[2px]" />
                             </ReactFlow>
+                        </div>
+                    )}
+
+                    {viewMode === 'data' && (
+                        <div className="flex-1 flex items-center justify-center text-[#444] text-sm font-mono">
+                            DATA VIEW - Coming Soon
+                        </div>
+                    )}
+
+                    {viewMode === 'gallery' && (
+                        <div className="flex-1 flex items-center justify-center text-[#444] text-sm font-mono">
+                            GALLERY VIEW - Coming Soon
                         </div>
                     )}
 
