@@ -188,8 +188,10 @@ const Flow = () => {
     }, [isRightPanelOpen]);
 
     const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: AppNode) => {
-        // Don't open code editor for post-it notes
-        if (node.type === 'postit') {
+        // Don't open code editor for post-it notes, start, or end nodes
+        if (node.type === 'postit' ||
+            node.data.toolId === 'flow-start' ||
+            node.data.toolId === 'flow-end') {
             return;
         }
 
@@ -214,6 +216,18 @@ const Flow = () => {
             })
         );
     }, [setNodes]);
+
+    // Derived state for the inspector - moved up for usage in isCodeDisabled
+    const selectedNode = useMemo(() =>
+        nodes.find((n) => n.id === selectedNodeId) || null,
+        [nodes, selectedNodeId]);
+
+    const isCodeDisabled = useMemo(() => {
+        if (!selectedNode) return false;
+        return selectedNode.type === 'postit' ||
+            selectedNode.data.toolId === 'flow-start' ||
+            selectedNode.data.toolId === 'flow-end';
+    }, [selectedNode]);
 
     const runWorkflow = async () => {
         log('=== WORKFLOW EXECUTION STARTED ===');
@@ -403,11 +417,6 @@ const Flow = () => {
 
     const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
 
-    // Derived state for the inspector
-    const selectedNode = useMemo(() =>
-        nodes.find((n) => n.id === selectedNodeId) || null,
-        [nodes, selectedNodeId]);
-
     return (
         <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#18181b] text-[#ccc] font-sans">
             {/* Menu Bar */}
@@ -477,8 +486,14 @@ const Flow = () => {
                     </button>
                     <button className="px-3 py-0.5 text-[11px] font-medium hover:bg-[#222] text-[#888] rounded-[2px] transition-colors">PLOTTING</button>
                     <button
-                        onClick={() => setViewMode('code')}
-                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'code' ? 'bg-[#333] text-white' : 'hover:bg-[#222] text-[#888]'}`}
+                        onClick={() => !isCodeDisabled && setViewMode('code')}
+                        disabled={isCodeDisabled}
+                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'code'
+                            ? 'bg-[#333] text-white'
+                            : isCodeDisabled
+                                ? 'bg-transparent text-[#444] cursor-not-allowed'
+                                : 'hover:bg-[#222] text-[#888]'
+                            }`}
                     >
                         CODE
                     </button>
