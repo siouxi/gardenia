@@ -250,22 +250,54 @@ const Flow = () => {
                 return;
             }
 
-            // Get execution order using BFS from START node
+            // Get execution order using Topological Sort (Kahn's Algorithm)
             const getExecutionOrder = (startNodeId: string): string[] => {
-                const visited = new Set<string>();
+                const inDegree = new Map<string, number>();
                 const order: string[] = [];
-                const queue: string[] = [startNodeId];
+                const queue: string[] = [];  // Nodes with in-degree 0
+
+                // Initialize in-degrees
+                nodes.forEach(node => {
+                    inDegree.set(node.id, 0);
+                });
+
+                // Calculate in-degrees
+                edges.forEach(edge => {
+                    const target = edge.target;
+                    inDegree.set(target, (inDegree.get(target) || 0) + 1);
+                });
+
+                // Start with nodes having 0 in-degree (should be START node)
+                // We trust the provided startNodeId is valid, but verify in-degree
+                if (inDegree.get(startNodeId) === 0) {
+                    queue.push(startNodeId);
+                } else {
+                    // Fallback: If Start has incoming edges (loops?), force add it?
+                    // For now, strict topology: find all 0 in-degrees relative to the reachable subgraph
+                    // Actually, simpler: Push ALL 0-in-degree nodes initially.
+                    nodes.forEach(node => {
+                        if (inDegree.get(node.id) === 0) {
+                            if (!queue.includes(node.id)) queue.push(node.id);
+                        }
+                    });
+                }
 
                 while (queue.length > 0) {
                     const nodeId = queue.shift()!;
-                    if (visited.has(nodeId)) continue;
-
-                    visited.add(nodeId);
                     order.push(nodeId);
 
-                    // Find outgoing edges
+                    // Find outgoing edges from this node
                     const outgoing = edges.filter(e => e.source === nodeId);
-                    outgoing.forEach(edge => queue.push(edge.target));
+
+                    outgoing.forEach(edge => {
+                        const target = edge.target;
+                        const currentInDegree = inDegree.get(target)! - 1;
+                        inDegree.set(target, currentInDegree);
+
+                        if (currentInDegree === 0) {
+                            queue.push(target);
+                        }
+                    });
                 }
 
                 return order;
