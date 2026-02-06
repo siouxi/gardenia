@@ -22,17 +22,17 @@ export const ResolveNode = ({ data, selected }: NodeProps) => {
     const toolData = data.toolData as any;
 
     // Default to at least one IO if missing definition, for backward compat or generic nodes
-    const inputs = toolData?.inputs?.length ? toolData.inputs : [];
+    // Default to at least one IO if missing definition, for backward compat or generic nodes
+    const inputs = toolData?.inputs || [];
 
-    // Explicitly handle outputs. If defined, use them. If not defined and no inputs, standard node might need 1 default.
-    // However, if inputs exist but no outputs, it's a sink node.
-    // If neither exist (like initial Input node before refactor), we might want a default.
-    // Let's assume FileInput updates will fix the definitions.
-    const outputs = toolData?.outputs?.length ? toolData.outputs : [];
+    // Explicitly handle outputs. If defined (even if empty), use them.
+    const outputs = toolData?.outputs || [];
 
     // Fallback for generic/legacy nodes
-    const showDefaultInput = !inputs.length && data.type !== 'input';
-    const showDefaultOutput = !outputs.length;
+    // Only show default IO if not explicitly defined (undefined).
+    // If explicitly defined as [] (empty), do not show default.
+    const showDefaultInput = (!toolData?.inputs) && data.type !== 'input';
+    const showDefaultOutput = (!toolData?.outputs);
 
     return (
         <div className={`

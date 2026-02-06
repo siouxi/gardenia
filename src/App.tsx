@@ -189,6 +189,17 @@ const Flow = () => {
     }, [setNodes]);
 
     const runWorkflow = () => {
+        // Validation: Check if Start Node is connected
+        const startNodes = nodes.filter(n => n.data.toolId === 'flow-start');
+        const hasUnconnectedStart = startNodes.some(node => {
+            return !edges.some(edge => edge.source === node.id || edge.target === node.id);
+        });
+
+        if (hasUnconnectedStart) {
+            alert("Please create a workflow.");
+            return;
+        }
+
         (window as any).electronAPI?.runWorkflow({ nodes, edges })
             .then((res: any) => console.log(res))
             .catch((err: any) => console.error(err));

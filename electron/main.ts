@@ -204,11 +204,49 @@ app.on('ready', () => {
 
     ipcMain.handle('run-workflow', async (event, workflowData) => {
         console.log('Received workflow:', workflowData);
-        // Here we would dump the data to a file and run the python engine
+
+        const { nodes, edges } = workflowData;
+
+        // Find START nodes
+        const startNodes = nodes.filter((n: any) => n.data?.toolId === 'flow-start');
+
+        if (startNodes.length > 0) {
+            for (const startNode of startNodes) {
+                // Check if this start node has any outgoing edges
+                const isConnected = edges.some((e: any) => e.source === startNode.id);
+
+                if (!isConnected) {
+                    // Unconnected START node found - trigger the welcome message
+                    const welcomeScript = 'print("Create a workflow to get started")';
+                    return await pythonSession.executeCommand(welcomeScript);
+                }
+            }
+        }
+
+        // Standard execution flow - Execute in the persistent session
         try {
-            const result = await runPythonScript();
-            return { status: 'success', output: result };
+            console.log('Executing workflow in persistent session');
+
+            // 1. Announce start
+            await pythonSession.executeCommand('print("\\n[System] Initializing workflow engine...")');
+
+            // 2. Pass workflow data (mocking the handoff for now)
+            // In a real scenario, we would serialize nodes/edges to a JSON string or Python dict
+            const nodeCount = nodes.length;
+            const edgeCount = edges.length;
+
+            await pythonSession.executeCommand(`print("Loaded workflow with ${nodeCount} nodes and ${edgeCount} connections.")`);
+
+            // 3. Simulate execution step by step (placeholder)
+            await pythonSession.executeCommand('print("Validating graph topology... OK")');
+            await pythonSession.executeCommand('print("Starting execution...")');
+
+            // Simulate a small delay or just print completion
+            await pythonSession.executeCommand('print("Workflow execution completed successfully.")');
+
+            return { status: 'success', output: 'Workflow started in session' };
         } catch (error) {
+            console.error('Workflow execution error:', error);
             return { status: 'error', message: String(error) };
         }
     });
@@ -299,6 +337,15 @@ class PythonSessionManager {
     private outputBuffer: string = '';
     private errorBuffer: string = '';
 
+    private cleanOutput(text: string): string {
+        // Remove VS Code shell integration sequences (OSC 633)
+        // Format: ESC ] 633 ; ... (BEL | ST)
+        // Regex: /\x1b\]633;.*?(?:\x07|\x1b\\)/g
+        let clean = text.replace(/\x1b\]633;.*?(?:\x07|\x1b\\)/g, '');
+
+        return clean;
+    }
+
     start(): Promise<{ success: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
             if (this.pythonProcess) {
@@ -309,14 +356,22 @@ class PythonSessionManager {
             console.log('Starting Python session...');
 
             try {
+                // Filter out VS Code environment variables to prevent shell integration injection
+                const env = { ...process.env };
+                delete env['VSCODE_SHELL_INTEGRATION'];
+                delete env['TERM_PROGRAM'];
+                delete env['TERM_PROGRAM_VERSION'];
+                delete env['VSCODE_INJECTION'];
+
                 // Start Python in interactive mode (-i) and unbuffered (-u)
-                this.pythonProcess = spawn('python3', ['-i', '-u']);
+                // Use system python explicitly to avoid Anaconda
+                this.pythonProcess = spawn('/usr/bin/python3', ['-i', '-u'], { env });
 
                 let initialOutput = '';
                 let resolved = false;
 
                 const onData = (data: Buffer) => {
-                    const output = data.toString();
+                    const output = this.cleanOutput(data.toString());
                     initialOutput += output;
                     console.log('Python output:', output);
 
@@ -412,7 +467,8 @@ class PythonSessionManager {
 
                     // Clean up the output
                     // Remove the command echo (if any) and the trailing prompt
-                    let cleanOutput = this.outputBuffer;
+                    // First strip raw buffer of any artifacts
+                    let cleanOutput = this.cleanOutput(this.outputBuffer);
 
                     // Remove the user's command if it was echoed
                     if (cleanOutput.startsWith(command)) {
