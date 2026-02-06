@@ -1,5 +1,10 @@
 import { NodeData } from '../App';
 import { Code } from 'lucide-react';
+import Editor from 'react-simple-code-editor';
+import { highlight, languages } from 'prismjs';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-r';
+import 'prismjs/themes/prism-tomorrow.css'; // Dark theme
 
 interface CodeEditorProps {
     node: { id: string; data: NodeData } | null;
@@ -23,6 +28,14 @@ export const CodeEditor = ({ node, onUpdate }: CodeEditorProps) => {
         onUpdate(node.id, { ...node.data, language: lang });
     };
 
+    const highlightCode = (code: string) => {
+        if (currentLanguage === 'python') {
+            return highlight(code, languages.python, 'python');
+        } else {
+            return highlight(code, languages.r, 'r');
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-[#1e1e1e] border-l border-[#000]">
             <div className="h-9 flex shrink-0 items-center px-4 justify-between border-b border-[#121212] bg-[#1f1f23]">
@@ -41,8 +54,8 @@ export const CodeEditor = ({ node, onUpdate }: CodeEditorProps) => {
                     <button
                         onClick={() => handleLanguageToggle('python')}
                         className={`px-3 py-1 text-[10px] font-bold rounded-[2px] transition-all ${currentLanguage === 'python'
-                                ? 'bg-[#34d399] text-[#000]'
-                                : 'text-[#666] hover:text-[#999]'
+                            ? 'bg-[#34d399] text-[#000]'
+                            : 'text-[#666] hover:text-[#999]'
                             }`}
                     >
                         PYTHON
@@ -50,20 +63,28 @@ export const CodeEditor = ({ node, onUpdate }: CodeEditorProps) => {
                     <button
                         onClick={() => handleLanguageToggle('r')}
                         className={`px-3 py-1 text-[10px] font-bold rounded-[2px] transition-all ${currentLanguage === 'r'
-                                ? 'bg-[#34d399] text-[#000]'
-                                : 'text-[#666] hover:text-[#999]'
+                            ? 'bg-[#34d399] text-[#000]'
+                            : 'text-[#666] hover:text-[#999]'
                             }`}
                     >
                         R
                     </button>
                 </div>
             </div>
-            <div className="flex-1 relative bg-[#121212]">
-                <textarea
-                    className="w-full h-full bg-[#121212] text-[#d4d4d4] font-mono text-sm p-6 outline-none resize-none leading-relaxed border-none focus:ring-0"
-                    spellCheck={false}
+            <div className="flex-1 relative bg-[#121212] overflow-auto">
+                <Editor
                     value={node.data.code || ''}
-                    onChange={(e) => onUpdate(node.id, { ...node.data, code: e.target.value })}
+                    onValueChange={(code) => onUpdate(node.id, { ...node.data, code })}
+                    highlight={highlightCode}
+                    padding={24}
+                    style={{
+                        fontFamily: '"Fira Code", "Fira Mono", monospace',
+                        fontSize: 14,
+                        backgroundColor: '#121212',
+                        color: '#d4d4d4',
+                        minHeight: '100%',
+                    }}
+                    textareaClassName="focus:outline-none"
                     placeholder={`# Start typing your ${currentLanguage === 'python' ? 'Python' : 'R'} code here...`}
                 />
             </div>
