@@ -43,7 +43,8 @@ dev.off()
 
 print("MA Plot generated successfully")
 `,
-    language: 'r'
+    language: 'r',
+    libraries: ['grDevices'] // Base R graphics library
 };
 
 export default tool;

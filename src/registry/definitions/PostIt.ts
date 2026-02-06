@@ -24,7 +24,8 @@ const tool: ToolDefinition = {
             default: 'yellow',
             options: ['yellow', 'pink', 'blue', 'green']
         }
-    ]
+    ],
+    libraries: [] // No execution libraries needed for notes
 };
 
 export default tool;

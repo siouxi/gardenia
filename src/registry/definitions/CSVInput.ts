@@ -34,7 +34,8 @@ if (exists("path") && path != "") {
     print("No file selected. Please choose a CSV file.")
 }
 `,
-    language: 'r'
+    language: 'r',
+    libraries: ['utils'] // Base R CSV reading functions
 };
 
 export default tool;

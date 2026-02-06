@@ -17,7 +17,8 @@ const tool: ToolDefinition = {
             label: 'File Path',
             required: true
         }
-    ]
+    ],
+    libraries: [] // No execution libraries needed for file input
 };
 
 export default tool;

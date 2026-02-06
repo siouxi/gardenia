@@ -26,7 +26,8 @@ const tool: ToolDefinition = {
             label: 'Threads',
             default: 1
         }
-    ]
+    ],
+    libraries: [] // External bioinformatics tool, installed separately
 };
 
 export default tool;

@@ -33,7 +33,8 @@ const tool: ToolDefinition = {
             label: 'Quality Threshold',
             default: 20
         }
-    ]
+    ],
+    libraries: [] // External Java tool, installed separately
 };
 
 export default tool;

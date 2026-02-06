@@ -19,7 +19,8 @@ const tool: ToolDefinition = {
             label: 'Interleaved Paired-End',
             default: false
         }
-    ]
+    ],
+    libraries: [] // Could use Bioconductor's ShortRead package if implemented
 };
 
 export default tool;

@@ -15,6 +15,7 @@ import { Node } from '@xyflow/react';
 import { PackageManager } from './components/PackageManager';
 import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
+import { validateWorkflowLibraries, installMissingLibraries } from './utils/LibraryValidator';
 import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
 
 export interface NodeData {
@@ -283,7 +284,52 @@ const Flow = () => {
                 return;
             }
 
+            // Validate required libraries before execution
+            log('Checking required libraries...');
+            try {
+                const missing = await validateWorkflowLibraries(nodes);
+
+                if (missing.python.length > 0 || missing.r.length > 0) {
+                    // Show missing libraries
+                    if (missing.python.length > 0) {
+                        log(`⚠️  Missing Python packages: ${missing.python.join(', ')}`);
+                    }
+                    if (missing.r.length > 0) {
+                        log(`⚠️  Missing R packages: ${missing.r.join(', ')}`);
+                    }
+
+                    // Prompt user for installation
+                    const shouldInstall = window.confirm(
+                        `Some required libraries are missing:\n\n` +
+                        (missing.python.length > 0 ? `Python: ${missing.python.join(', ')}\n` : '') +
+                        (missing.r.length > 0 ? `R: ${missing.r.join(', ')}\n` : '') +
+                        `\nDo you want to install them now?`
+                    );
+
+                    if (shouldInstall) {
+                        log('Installing missing libraries...');
+                        await installMissingLibraries(missing, log);
+                        log('✅ All libraries installed successfully');
+                    } else {
+                        log('⚠️  Workflow execution cancelled - missing libraries not installed');
+                        return; // Stop execution
+                    }
+                } else {
+                    log('✅ All required libraries are installed');
+                }
+            } catch (error) {
+                log(`❌ Error checking libraries: ${error}`);
+                const proceed = window.confirm(
+                    'Failed to verify library installation. Do you want to proceed anyway?'
+                );
+                if (!proceed) {
+                    log('⚠️  Workflow execution cancelled');
+                    return;
+                }
+            }
+
             // Get execution order using Topological Sort (Kahn's Algorithm)
+
             const getExecutionOrder = (startNodeId: string): string[] => {
                 const inDegree = new Map<string, number>();
                 const order: string[] = [];

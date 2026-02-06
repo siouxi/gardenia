@@ -12,7 +12,8 @@ const tool: ToolDefinition = {
     outputs: [
         { name: 'multiqc_report', type: 'html' }
     ],
-    parameters: []
+    parameters: [],
+    libraries: [] // External Python tool (multiqc package), installed separately
 };
 
 export default tool;

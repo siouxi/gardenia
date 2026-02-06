@@ -10,7 +10,8 @@ const tool: ToolDefinition = {
         { name: 'end_signal', type: 'signal' }
     ],
     outputs: [],
-    parameters: []
+    parameters: [],
+    libraries: [] // Workflow control node, no libraries needed
 };
 
 export default tool;

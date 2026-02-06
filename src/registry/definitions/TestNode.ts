@@ -13,7 +13,8 @@ const tool: ToolDefinition = {
     outputs: [
         { name: 'output', type: 'any', description: 'Test output' }
     ],
-    parameters: []
+    parameters: [],
+    libraries: [] // Test/debug node, no libraries needed
 };
 
 export default tool;

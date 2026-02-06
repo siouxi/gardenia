@@ -41,4 +41,5 @@ export interface ToolDefinition {
     // Execution
     defaultCode?: string;
     language?: 'python' | 'r';
+    libraries?: string[]; // Required libraries/packages (e.g., ['ggplot2', 'dplyr'] for R or ['pandas', 'numpy'] for Python)
 }

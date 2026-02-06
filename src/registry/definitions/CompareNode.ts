@@ -11,7 +11,8 @@ const tool: ToolDefinition = {
         { name: 'source_b', type: 'any', description: 'Second process to compare' }
     ],
     outputs: [],
-    parameters: []
+    parameters: [],
+    libraries: [] // Workflow control node, no libraries needed
 };
 
 export default tool;
