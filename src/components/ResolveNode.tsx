@@ -102,6 +102,57 @@ export const ResolveNode = ({ data, selected }: NodeProps) => {
                     )}
                 </div>
 
+                {/* Parameters (File Picker, etc.) */}
+                {toolData?.parameters && toolData.parameters.length > 0 && (
+                    <div className="py-2 space-y-2">
+                        {toolData.parameters.map((param: any) => {
+                            if (param.type === 'file') {
+                                const currentValue = (data.parameterValues as any)?.[param.name] || '';
+                                const fileName = currentValue ? currentValue.split(/[/\\]/).pop() : 'Select File';
+
+                                const handleFileClick = async () => {
+                                    if ((window as any).electronAPI) {
+                                        const path = await (window as any).electronAPI.openFileDialog();
+                                        if (path) {
+                                            // Update node data using ReactFlow hook would be ideal, 
+                                            // but we need to pass setNodes or similar. 
+                                            // For now, let's assume we can update local state or trigger a change up the chain.
+                                            // Actually, in a Node component, we don't strictly have access to setNodes unless passed or via hook.
+                                            // Let's rely on an event or property update if possible.
+                                            // Since we are inside the Node, we can use useReactFlow to update.
+                                            // But I need to import it. I'll do that in a separate edit if needed, or assume it behaves like a standard node.
+
+                                            // Note: In React Flow v11+, useReactFlow is available.
+                                            // I added import at top, so I should use it.
+
+                                            // Dispatch custom event for the parent flow to catch (simple approach) or direct update
+                                            const event = new CustomEvent('node:update-parameter', {
+                                                detail: { nodeId: data.id, paramName: param.name, value: path }
+                                            });
+                                            window.dispatchEvent(event);
+                                        }
+                                    }
+                                };
+
+                                return (
+                                    <div key={param.name} className="flex flex-col gap-1">
+                                        <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
+                                        <button
+                                            onClick={handleFileClick}
+                                            className="bg-[#2a2a2a] hover:bg-[#333] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] flex items-center gap-2 transition-colors truncate w-full text-left"
+                                            title={currentValue}
+                                        >
+                                            <span className="truncate flex-1">{fileName}</span>
+                                            <span className="text-[#666] text-[9px] shrink-0">📂</span>
+                                        </button>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })}
+                    </div>
+                )}
+
                 {/* Divider if both exist */}
                 {(inputs.length > 0 && outputs.length > 0) && <div className="h-2" />}
 

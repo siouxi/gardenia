@@ -14,6 +14,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     startPythonSession: () => electron_1.ipcRenderer.invoke('start-python-session'),
     executePythonCommand: (command) => electron_1.ipcRenderer.invoke('execute-python-command', command),
     stopPythonSession: () => electron_1.ipcRenderer.invoke('stop-python-session'),
-    getPythonSessionStatus: () => electron_1.ipcRenderer.invoke('python-session-status'),
+    // File Dialog API
+    openFileDialog: () => electron_1.ipcRenderer.invoke('dialog:openFile'),
 });
 //# sourceMappingURL=preload.js.map

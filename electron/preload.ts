@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startPythonSession: () => ipcRenderer.invoke('start-python-session'),
     executePythonCommand: (command: string) => ipcRenderer.invoke('execute-python-command', command),
     stopPythonSession: () => ipcRenderer.invoke('stop-python-session'),
-    getPythonSessionStatus: () => ipcRenderer.invoke('python-session-status'),
+    // File Dialog API
+    openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
 });

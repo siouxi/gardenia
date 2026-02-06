@@ -95,9 +95,37 @@ const Flow = () => {
     }, [isResizingLeft, isResizingRight]);
 
     // Attach global listeners
+    // Attach global listeners
+    // Moved below useNodesState
+
+
+    const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
+
+    // Attach global listeners (Moved here to access setNodes)
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Enter') stopResizing();
+        };
+
+        const onNodeUpdateParameter = (e: any) => {
+            const { nodeId, paramName, value } = e.detail;
+            setNodes((nds) =>
+                nds.map((node) => {
+                    if (node.id === nodeId) {
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                parameterValues: {
+                                    ...node.data.parameterValues,
+                                    [paramName]: value
+                                }
+                            }
+                        };
+                    }
+                    return node;
+                })
+            );
         };
 
         if (isResizingLeft || isResizingRight) {
@@ -106,14 +134,15 @@ const Flow = () => {
             window.addEventListener('keydown', onKeyDown);
         }
 
+        window.addEventListener('node:update-parameter', onNodeUpdateParameter);
+
         return () => {
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('click', stopResizing);
             window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('node:update-parameter', onNodeUpdateParameter);
         };
-    }, [isResizingLeft, isResizingRight, onMouseMove, stopResizing]);
-
-    const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
+    }, [isResizingLeft, isResizingRight, onMouseMove, stopResizing, setNodes]);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -337,9 +366,40 @@ const Flow = () => {
                     break;
                 }
 
-                // Execute code for TEST and other nodes
                 const code = node.data.code || '# No code defined';
                 const language = node.data.language || 'python';
+                const params = node.data.parameterValues || {};
+
+                // Inject parameters as variables
+                let codeToExecute = code;
+                let paramPrefix = '';
+
+                Object.entries(params).forEach(([key, value]) => {
+                    if (value === undefined || value === null) return;
+
+                    if (language === 'r') {
+                        if (typeof value === 'string') {
+                            paramPrefix += `${key} <- ${JSON.stringify(value)}\n`;
+                        } else if (typeof value === 'boolean') {
+                            paramPrefix += `${key} <- ${value ? 'TRUE' : 'FALSE'}\n`;
+                        } else {
+                            paramPrefix += `${key} <- ${value}\n`;
+                        }
+                    } else {
+                        // Python
+                        if (typeof value === 'string') {
+                            paramPrefix += `${key} = ${JSON.stringify(value)}\n`;
+                        } else if (typeof value === 'boolean') {
+                            paramPrefix += `${key} = ${value ? 'True' : 'False'}\n`;
+                        } else {
+                            paramPrefix += `${key} = ${value}\n`;
+                        }
+                    }
+                });
+
+                if (paramPrefix) {
+                    codeToExecute = `${paramPrefix}\n${code}`;
+                }
 
                 log(`[${node.data.label}] Executing ${language} code...`);
 
@@ -355,9 +415,9 @@ const Flow = () => {
                 try {
                     let result;
                     if (language === 'python') {
-                        result = await (window as any).electronAPI.executePythonCommand(code);
+                        result = await (window as any).electronAPI.executePythonCommand(codeToExecute);
                     } else {
-                        result = await (window as any).electronAPI.executeRCommand(code);
+                        result = await (window as any).electronAPI.executeRCommand(codeToExecute);
                     }
 
                     if (result.status === 'success') {

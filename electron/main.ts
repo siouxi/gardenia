@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
@@ -359,8 +359,20 @@ app.on('ready', () => {
         return { success: true };
     });
 
-    ipcMain.handle('python-session-status', async () => {
-        return { active: pythonSession.isActive() };
+    // File Dialog IPC
+    ipcMain.handle('dialog:openFile', async () => {
+        const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow!, {
+            properties: ['openFile'],
+            filters: [
+                { name: 'CSV Files', extensions: ['csv'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+        if (canceled) {
+            return null;
+        } else {
+            return filePaths[0];
+        }
     });
 });
 

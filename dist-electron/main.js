@@ -322,8 +322,21 @@ electron_1.app.on('ready', () => {
         pythonSession.stop();
         return { success: true };
     }));
-    electron_1.ipcMain.handle('python-session-status', () => __awaiter(void 0, void 0, void 0, function* () {
-        return { active: pythonSession.isActive() };
+    // File Dialog IPC
+    electron_1.ipcMain.handle('dialog:openFile', () => __awaiter(void 0, void 0, void 0, function* () {
+        const { canceled, filePaths } = yield electron_1.dialog.showOpenDialog(mainWindow, {
+            properties: ['openFile'],
+            filters: [
+                { name: 'CSV Files', extensions: ['csv'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+        if (canceled) {
+            return null;
+        }
+        else {
+            return filePaths[0];
+        }
     }));
 });
 // Python Session Manager
