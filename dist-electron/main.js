@@ -23,8 +23,8 @@ const isDev = process.env.NODE_ENV === 'development';
 class RSessionManager {
     constructor() {
         this.rProcess = null;
-        this.outputBuffer = '';
-        this.errorBuffer = '';
+        // Buffer to handle split chunks of JSON response
+        this.pendingData = '';
     }
     start() {
         return new Promise((resolve) => {
@@ -34,51 +34,48 @@ class RSessionManager {
             }
             console.log('Starting R session...');
             try {
-                // Start R with --vanilla flag to prevent loading .Rprofile
-                // --interactive for interactive mode, --no-save to not save workspace
-                this.rProcess = (0, child_process_1.spawn)('R', ['--vanilla', '--interactive', '--no-save']);
-                let initialOutput = '';
-                let resolved = false;
-                const onData = (data) => {
-                    const output = data.toString();
-                    initialOutput += output;
-                    console.log('R output:', output);
-                    // Check if R is ready (when we see the prompt)
-                    if (output.includes('>') && !resolved) {
-                        resolved = true;
-                        this.rProcess.stdout.off('data', onData);
-                        // Extract version if available
-                        const versionMatch = initialOutput.match(/R version ([\d.]+)/);
-                        const version = versionMatch ? versionMatch[1] : undefined;
-                        console.log('R session started successfully, version:', version);
-                        resolve({ success: true, version });
+                // Robust path resolution for r_bridge.R
+                let scriptPath = path_1.default.join(__dirname, 'r_bridge.R');
+                // If not found in current dir (production/dist), try dev path
+                if (!fs_1.default.existsSync(scriptPath)) {
+                    const devPath = path_1.default.join(__dirname, '../electron/r_bridge.R');
+                    if (fs_1.default.existsSync(devPath)) {
+                        scriptPath = devPath;
                     }
-                };
-                this.rProcess.stdout.on('data', onData);
-                this.rProcess.stderr.on('data', (data) => {
-                    console.error('R stderr:', data.toString());
-                });
+                    else {
+                        console.error('Could not find r_bridge.R in:', scriptPath, 'or', devPath);
+                    }
+                }
+                console.log(`Using R bridge script at: ${scriptPath}`);
+                // Spawn the bridge script using Rscript
+                // Using "Rscript" assuming it is in PATH
+                this.rProcess = (0, child_process_1.spawn)('Rscript', [scriptPath]);
                 this.rProcess.on('error', (error) => {
                     console.error('R process error:', error);
-                    if (!resolved) {
-                        resolved = true;
-                        this.rProcess = null;
-                        resolve({ success: false, error: error.message });
-                    }
+                    this.rProcess = null;
+                    resolve({ success: false, error: error.message });
                 });
                 this.rProcess.on('close', (code) => {
                     console.log('R process exited with code:', code);
                     this.rProcess = null;
                 });
-                // Timeout after 10 seconds (increased from 5)
-                setTimeout(() => {
-                    if (!resolved) {
-                        resolved = true;
-                        console.error('R startup timeout after 10 seconds');
-                        console.error('Output received:', initialOutput);
-                        resolve({ success: false, error: 'R startup timeout' });
+                // Give it a moment to spawn then verify by running a test command
+                setTimeout(() => __awaiter(this, void 0, void 0, function* () {
+                    if (this.rProcess) {
+                        try {
+                            const verRes = yield this.executeCommand('cat(R.version$major, ".", R.version$minor, sep="")');
+                            const version = verRes.output.trim();
+                            console.log('R session started successfully, version:', version);
+                            resolve({ success: true, version });
+                        }
+                        catch (e) {
+                            resolve({ success: false, error: 'Failed to verify R session: ' + e.message });
+                        }
                     }
-                }, 10000);
+                    else {
+                        resolve({ success: false, error: 'Process exited immediately' });
+                    }
+                }), 500);
             }
             catch (error) {
                 console.error('Failed to spawn R process:', error);
@@ -87,46 +84,60 @@ class RSessionManager {
         });
     }
     executeCommand(command) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             if (!this.rProcess) {
                 resolve({ status: 'error', output: '', error: 'R session not started' });
                 return;
             }
-            // Clear buffers before executing new command
-            this.outputBuffer = '';
-            this.errorBuffer = '';
-            const onStdout = (data) => {
-                this.outputBuffer += data.toString();
+            // Prepare the one-time listener for the response
+            const onData = (chunk) => {
+                const str = chunk.toString();
+                this.pendingData += str;
+                // Check if we have a complete newline-terminated JSON object
+                if (this.pendingData.includes('\n')) {
+                    const lines = this.pendingData.split('\n');
+                    // Process the first line as our response
+                    const responseLine = lines[0];
+                    // Keep the rest in buffer (rare edge case of rapid firing)
+                    this.pendingData = lines.slice(1).join('\n');
+                    cleanup();
+                    try {
+                        const res = JSON.parse(responseLine);
+                        resolve({
+                            status: res.status === 'success' ? 'success' : 'error',
+                            output: res.output || '',
+                            error: res.error || (res.status === 'error' ? res.output : undefined)
+                        });
+                    }
+                    catch (e) {
+                        console.error('Failed to parse R response:', responseLine);
+                        resolve({
+                            status: 'error',
+                            output: this.pendingData, // Return raw as output for debug
+                            error: 'Protocol Error: Invalid JSON from R bridge'
+                        });
+                    }
+                }
             };
-            const onStderr = (data) => {
-                this.errorBuffer += data.toString();
+            // Attach 'data' listener
+            this.rProcess.stdout.on('data', onData);
+            const cleanup = () => {
+                var _a, _b;
+                (_b = (_a = this.rProcess) === null || _a === void 0 ? void 0 : _a.stdout) === null || _b === void 0 ? void 0 : _b.off('data', onData);
             };
-            this.rProcess.stdout.on('data', onStdout);
-            this.rProcess.stderr.on('data', onStderr);
-            // Write command to R process
-            this.rProcess.stdin.write(command + '\n');
-            // Wait for output (simplified - wait for next prompt)
-            setTimeout(() => {
-                this.rProcess.stdout.off('data', onStdout);
-                this.rProcess.stderr.off('data', onStderr);
-                // Clean up the output (remove the command echo and prompt)
-                let cleanOutput = this.outputBuffer
-                    .split('\n')
-                    .filter(line => !line.startsWith('>') && line.trim() !== command.trim())
-                    .join('\n')
-                    .trim();
-                const hasError = this.errorBuffer.length > 0 || cleanOutput.includes('Error');
-                resolve({
-                    status: hasError ? 'error' : 'success',
-                    output: cleanOutput,
-                    error: this.errorBuffer || undefined
-                });
-            }, 500); // Wait 500ms for output
+            // Send command as JSON
+            try {
+                const payload = JSON.stringify({ command });
+                this.rProcess.stdin.write(payload + '\n');
+            }
+            catch (e) {
+                cleanup();
+                reject(e);
+            }
         });
     }
     stop() {
         if (this.rProcess) {
-            this.rProcess.stdin.write('q()\n');
             this.rProcess.kill();
             this.rProcess = null;
         }
