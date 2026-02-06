@@ -358,7 +358,7 @@ const Flow = () => {
                     }
 
                     if (result.status === 'success') {
-                        log(`[${node.data.label}] ✅ Output: ${result.output}`);
+                        log(`[${node.data.label}] ✅ Output:\n${result.output}`);
 
                         // Update node state to 'success'
                         setNodes((nds) =>
@@ -369,7 +369,7 @@ const Flow = () => {
                             )
                         );
                     } else {
-                        log(`[${node.data.label}] ❌ Error: ${result.error || result.output}`);
+                        log(`[${node.data.label}] ❌ Error:\n${result.error || result.output}`);
 
                         // Update node state to 'error'
                         setNodes((nds) =>
@@ -380,11 +380,11 @@ const Flow = () => {
                             )
                         );
 
-                        log(`[${node.data.label}] ❌ Error: ${result.error || result.output}`); // Changed alert to log
+                        // Removed duplicate log here
                         return; // Stop execution on error
                     }
                 } catch (error) {
-                    log(`[${node.data.label}] ❌ Exception: ${error}`);
+                    log(`[${node.data.label}] ❌ Exception:\n${error}`);
 
                     // Update node state to 'error'
                     setNodes((nds) =>

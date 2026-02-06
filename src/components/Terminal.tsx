@@ -443,7 +443,7 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
 
             <div className="flex-1 overflow-auto p-4 font-mono text-xs space-y-1" ref={outputRef}>
                 {activeTab === 'console' && consoleLogs.map((log, i) => (
-                    <div key={i} className="text-emerald-400 border-b border-slate-800/50 pb-0.5 mb-0.5 last:border-0">
+                    <div key={i} className="text-emerald-400 border-b border-slate-800/50 pb-0.5 mb-0.5 last:border-0 whitespace-pre-wrap">
                         <span className="opacity-50 mr-2">[{new Date().toLocaleTimeString()}]</span>
                         {log}
                     </div>
