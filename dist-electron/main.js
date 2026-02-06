@@ -17,6 +17,7 @@ const path_1 = __importDefault(require("path"));
 const child_process_1 = require("child_process");
 const fs_1 = __importDefault(require("fs"));
 let mainWindow;
+let activePythonPath = 'python3'; // Default
 // Determine if we are in development mode
 const isDev = process.env.NODE_ENV === 'development';
 // R Session Manager
@@ -342,7 +343,7 @@ electron_1.app.on('ready', () => {
     // PYTHON
     electron_1.ipcMain.handle('package:list-python', () => __awaiter(void 0, void 0, void 0, function* () {
         return new Promise((resolve) => {
-            const proc = (0, child_process_1.spawn)('python3', ['-m', 'pip', 'list', '--format=json']);
+            const proc = (0, child_process_1.spawn)(activePythonPath, ['-m', 'pip', 'list', '--format=json']);
             let data = '';
             proc.stdout.on('data', d => data += d);
             proc.on('close', () => {
@@ -357,7 +358,7 @@ electron_1.app.on('ready', () => {
     }));
     electron_1.ipcMain.handle('package:install-python', (event, name) => __awaiter(void 0, void 0, void 0, function* () {
         return new Promise((resolve) => {
-            const proc = (0, child_process_1.spawn)('python3', ['-m', 'pip', 'install', name]);
+            const proc = (0, child_process_1.spawn)(activePythonPath, ['-m', 'pip', 'install', name]);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -368,7 +369,7 @@ electron_1.app.on('ready', () => {
     }));
     electron_1.ipcMain.handle('package:uninstall-python', (event, name) => __awaiter(void 0, void 0, void 0, function* () {
         return new Promise((resolve) => {
-            const proc = (0, child_process_1.spawn)('python3', ['-m', 'pip', 'uninstall', '-y', name]);
+            const proc = (0, child_process_1.spawn)(activePythonPath, ['-m', 'pip', 'uninstall', '-y', name]);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -425,6 +426,35 @@ electron_1.app.on('ready', () => {
             });
         });
     }));
+    // Environment Manager IPC Handlers
+    electron_1.ipcMain.handle('env:list-conda', () => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            const proc = (0, child_process_1.spawn)('conda', ['env', 'list', '--json']);
+            let data = '';
+            proc.stdout.on('data', d => data += d);
+            proc.on('close', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    // Transform to nicer format
+                    const envs = parsed.envs.map((envPath) => {
+                        const name = path_1.default.basename(envPath); // Simple name derivation
+                        return { name, path: envPath };
+                    });
+                    resolve(envs);
+                }
+                catch (_a) {
+                    resolve([]);
+                }
+            });
+        });
+    }));
+    electron_1.ipcMain.handle('env:set-python', (event, pythonPath) => __awaiter(void 0, void 0, void 0, function* () {
+        activePythonPath = pythonPath;
+        return { success: true, current: activePythonPath };
+    }));
+    electron_1.ipcMain.handle('env:get-python', () => __awaiter(void 0, void 0, void 0, function* () {
+        return activePythonPath;
+    }));
 });
 // Python Session Manager
 class PythonSessionManager {
@@ -456,7 +486,7 @@ class PythonSessionManager {
                 console.log(`Using Python bridge script at: ${scriptPath}`);
                 // Spawn the bridge script
                 // Using "python3" assuming it is in PATH. 
-                this.pythonProcess = (0, child_process_1.spawn)('python3', ['-u', scriptPath]);
+                this.pythonProcess = (0, child_process_1.spawn)(activePythonPath, ['-u', scriptPath]);
                 this.pythonProcess.on('error', (error) => {
                     console.error('Python process error:', error);
                     this.pythonProcess = null;

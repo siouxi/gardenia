@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, RefreshCw, Send, Terminal } from 'lucide-react';
+import * as path from 'path-browserify'; // We need browser compatible path join
 
 interface InstalledPackage {
     Package: string; // R
@@ -9,14 +10,37 @@ interface InstalledPackage {
     [key: string]: any;
 }
 
+interface CondaEnv {
+    name: string;
+    path: string;
+}
+
 export const PackageManager: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'python' | 'r'>('python');
     const [packages, setPackages] = useState<InstalledPackage[]>([]);
+    const [envs, setEnvs] = useState<CondaEnv[]>([]);
+    const [currentEnv, setCurrentEnv] = useState<string>(''); // Path
     const [searchQuery, setSearchQuery] = useState('');
     const [installName, setInstallName] = useState('');
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<string>('');
     const [consoleOutput, setConsoleOutput] = useState<string>('');
+
+    const fetchEnvs = async () => {
+        try {
+            const envList = await (window as any).electronAPI.listCondaEnvs();
+            setEnvs(envList);
+            const current = await (window as any).electronAPI.getPythonEnv();
+            // If current matches one of our envs, select it
+            // If it's a raw path (like 'python3'), show it or handle it?
+            // Conda list returns full paths, so we should try to match.
+            // If no match (default 'python3'), maybe we can't select in dropdown easily?
+            // Let's assume user starts fresh or we default to finding one.
+            setCurrentEnv(current);
+        } catch (e) {
+            console.error("Failed to fetch envs", e);
+        }
+    };
 
     const fetchPackages = async () => {
         setLoading(true);
@@ -43,8 +67,17 @@ export const PackageManager: React.FC = () => {
     };
 
     useEffect(() => {
+        if (activeTab === 'python') {
+            fetchEnvs();
+        }
         fetchPackages();
     }, [activeTab]);
+
+    const handleEnvChange = async (newPath: string) => {
+        setCurrentEnv(newPath);
+        await (window as any).electronAPI.setPythonEnv(newPath);
+        fetchPackages(); // Reload packages for new env
+    };
 
     const handleInstall = async () => {
         if (!installName) return;
@@ -138,6 +171,26 @@ export const PackageManager: React.FC = () => {
                     <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 </button>
             </div>
+
+            {/* Environment Selector (Python Only) */}
+            {activeTab === 'python' && (
+                <div className="flex items-center gap-2 p-2 bg-[#1a1a1a] border-b border-[#333]">
+                    <span className="text-xs text-[#888] font-medium uppercase tracking-wide">Environment:</span>
+                    <select
+                        value={currentEnv}
+                        onChange={(e) => handleEnvChange(e.target.value)}
+                        className="bg-[#111] text-[#ccc] border border-[#333] rounded px-2 py-1 text-xs outline-none focus:border-[#007fd4] flex-1 max-w-[300px]"
+                    >
+                        {/* Always offer 'System' or current default if it's not in the list */}
+                        <option value="python3">System (Default)</option>
+                        {envs.map((env) => (
+                            <option key={env.path} value={path.join(env.path, 'bin', 'python3')}>
+                                {env.name} ({env.path})
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
             {/* Content Area */}
             <div className="flex-1 flex overflow-hidden">

@@ -23,5 +23,9 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     listRPackages: () => electron_1.ipcRenderer.invoke('package:list-r'),
     installRPackage: (name) => electron_1.ipcRenderer.invoke('package:install-r', name),
     uninstallRPackage: (name) => electron_1.ipcRenderer.invoke('package:uninstall-r', name),
+    // Environment API
+    listCondaEnvs: () => electron_1.ipcRenderer.invoke('env:list-conda'),
+    setPythonEnv: (path) => electron_1.ipcRenderer.invoke('env:set-python', path),
+    getPythonEnv: () => electron_1.ipcRenderer.invoke('env:get-python'),
 });
 //# sourceMappingURL=preload.js.map

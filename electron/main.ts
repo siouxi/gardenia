@@ -4,6 +4,7 @@ import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 
 let mainWindow: BrowserWindow | null;
+let activePythonPath = 'python3'; // Default
 
 // Determine if we are in development mode
 const isDev = process.env.NODE_ENV === 'development';
@@ -379,7 +380,7 @@ app.on('ready', () => {
     // PYTHON
     ipcMain.handle('package:list-python', async () => {
         return new Promise((resolve) => {
-            const proc = spawn('python3', ['-m', 'pip', 'list', '--format=json']);
+            const proc = spawn(activePythonPath, ['-m', 'pip', 'list', '--format=json']);
             let data = '';
             proc.stdout.on('data', d => data += d);
             proc.on('close', () => {
@@ -394,7 +395,7 @@ app.on('ready', () => {
 
     ipcMain.handle('package:install-python', async (event, name) => {
         return new Promise((resolve) => {
-            const proc = spawn('python3', ['-m', 'pip', 'install', name]);
+            const proc = spawn(activePythonPath, ['-m', 'pip', 'install', name]);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -406,7 +407,7 @@ app.on('ready', () => {
 
     ipcMain.handle('package:uninstall-python', async (event, name) => {
         return new Promise((resolve) => {
-            const proc = spawn('python3', ['-m', 'pip', 'uninstall', '-y', name]);
+            const proc = spawn(activePythonPath, ['-m', 'pip', 'uninstall', '-y', name]);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -465,6 +466,37 @@ app.on('ready', () => {
             });
         });
     });
+
+    // Environment Manager IPC Handlers
+    ipcMain.handle('env:list-conda', async () => {
+        return new Promise((resolve) => {
+            const proc = spawn('conda', ['env', 'list', '--json']);
+            let data = '';
+            proc.stdout.on('data', d => data += d);
+            proc.on('close', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    // Transform to nicer format
+                    const envs = parsed.envs.map((envPath: string) => {
+                        const name = path.basename(envPath); // Simple name derivation
+                        return { name, path: envPath };
+                    });
+                    resolve(envs);
+                } catch {
+                    resolve([]);
+                }
+            });
+        });
+    });
+
+    ipcMain.handle('env:set-python', async (event, pythonPath) => {
+        activePythonPath = pythonPath;
+        return { success: true, current: activePythonPath };
+    });
+
+    ipcMain.handle('env:get-python', async () => {
+        return activePythonPath;
+    });
 });
 
 // Python Session Manager
@@ -500,7 +532,7 @@ class PythonSessionManager {
 
                 // Spawn the bridge script
                 // Using "python3" assuming it is in PATH. 
-                this.pythonProcess = spawn('python3', ['-u', scriptPath]);
+                this.pythonProcess = spawn(activePythonPath, ['-u', scriptPath]);
 
                 this.pythonProcess.on('error', (error) => {
                     console.error('Python process error:', error);

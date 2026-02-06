@@ -27,4 +27,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listRPackages: () => ipcRenderer.invoke('package:list-r'),
     installRPackage: (name: string) => ipcRenderer.invoke('package:install-r', name),
     uninstallRPackage: (name: string) => ipcRenderer.invoke('package:uninstall-r', name),
+
+    // Environment API
+    listCondaEnvs: () => ipcRenderer.invoke('env:list-conda'),
+    setPythonEnv: (path: string) => ipcRenderer.invoke('env:set-python', path),
+    getPythonEnv: () => ipcRenderer.invoke('env:get-python'),
 });
