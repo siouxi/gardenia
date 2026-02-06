@@ -305,43 +305,22 @@ app.on('ready', () => {
         return { active: rSession.isActive() };
     });
 
-    // Shell command execution
-    ipcMain.handle('execute-shell-command', async (event, command: string) => {
-        return new Promise((resolve) => {
-            const cwd = process.env.HOME || '/';
-            const shellProcess = spawn('bash', ['-c', command], { cwd });
+    // Bash Session IPC Handlers
+    ipcMain.handle('start-bash-session', async () => {
+        return await bashSession.start();
+    });
 
-            let output = '';
-            let errorOutput = '';
+    ipcMain.handle('execute-bash-command', async (event, command: string) => {
+        return await bashSession.executeCommand(command);
+    });
 
-            shellProcess.stdout.on('data', (data) => {
-                output += data.toString();
-            });
+    ipcMain.handle('stop-bash-session', async () => {
+        bashSession.stop();
+        return { success: true };
+    });
 
-            shellProcess.stderr.on('data', (data) => {
-                errorOutput += data.toString();
-            });
-
-            shellProcess.on('close', (code) => {
-                resolve({
-                    status: code === 0 ? 'success' : 'error',
-                    output: output || errorOutput,
-                    error: code !== 0 ? errorOutput : undefined
-                });
-            });
-
-            // Timeout after 30 seconds
-            setTimeout(() => {
-                if (!shellProcess.killed) {
-                    shellProcess.kill();
-                    resolve({
-                        status: 'error',
-                        output: '',
-                        error: 'Command timeout (30s)'
-                    });
-                }
-            }, 30000);
-        });
+    ipcMain.handle('get-bash-session-status', async () => {
+        return { active: bashSession.isActive() };
     });
 
     // Python Session IPC Handlers
@@ -667,6 +646,131 @@ class PythonSessionManager {
 }
 
 const pythonSession = new PythonSessionManager();
+
+// Bash Session Manager
+class BashSessionManager {
+    private bashProcess: ChildProcess | null = null;
+    private pendingData: string = '';
+
+    start(): Promise<{ success: boolean; error?: string }> {
+        return new Promise((resolve) => {
+            if (this.bashProcess) {
+                resolve({ success: true });
+                return;
+            }
+
+            console.log('Starting Bash bridge session...');
+
+            try {
+                let scriptPath = path.join(__dirname, 'bash_bridge.py');
+                if (!fs.existsSync(scriptPath)) {
+                    const devPath = path.join(__dirname, '../electron/bash_bridge.py');
+                    if (fs.existsSync(devPath)) {
+                        scriptPath = devPath;
+                    } else {
+                        console.error('Could not find bash_bridge.py');
+                        resolve({ success: false, error: 'Bridge script not found' });
+                        return;
+                    }
+                }
+
+                // We use the active python to run the bash bridge (since it's a python script)
+                // This ensures we have a valid runner.
+                this.bashProcess = spawn(activePythonPath, ['-u', scriptPath]);
+
+                this.bashProcess.on('error', (error) => {
+                    console.error('Bash process error:', error);
+                    this.bashProcess = null;
+                    resolve({ success: false, error: error.message });
+                });
+
+                this.bashProcess.on('close', (code) => {
+                    console.log('Bash process exited with code:', code);
+                    this.bashProcess = null;
+                });
+
+                // Wait for initial prompt
+                const onData = (chunk: Buffer) => {
+                    const str = chunk.toString();
+                    if (str.includes('\n')) {
+                        this.bashProcess?.stdout?.off('data', onData);
+                        resolve({ success: true });
+                    }
+                };
+                this.bashProcess.stdout!.on('data', onData);
+
+            } catch (error: any) {
+                console.error('Failed to spawn Bash process:', error);
+                resolve({ success: false, error: error.message });
+            }
+        });
+    }
+
+    executeCommand(command: string): Promise<{ status: 'success' | 'error'; output: string; prompt?: string; error?: string }> {
+        return new Promise((resolve, reject) => {
+            if (!this.bashProcess) {
+                resolve({ status: 'error', output: '', error: 'Bash session not started' });
+                return;
+            }
+
+            const onData = (chunk: Buffer) => {
+                const str = chunk.toString();
+                this.pendingData += str;
+
+                if (this.pendingData.includes('\n')) {
+                    const lines = this.pendingData.split('\n');
+                    const responseLine = lines[0];
+                    this.pendingData = lines.slice(1).join('\n');
+
+                    cleanup();
+
+                    try {
+                        const res = JSON.parse(responseLine);
+                        resolve({
+                            status: res.status === 'success' ? 'success' : 'error',
+                            output: res.output || '',
+                            prompt: res.prompt,
+                            error: res.error
+                        });
+                    } catch (e) {
+                        console.error('Failed to parse Bash response:', responseLine);
+                        resolve({
+                            status: 'error',
+                            output: this.pendingData,
+                            error: 'Protocol Error'
+                        });
+                    }
+                }
+            };
+
+            this.bashProcess.stdout!.on('data', onData);
+            const cleanup = () => {
+                this.bashProcess?.stdout?.off('data', onData);
+            };
+
+            try {
+                const payload = JSON.stringify({ command });
+                this.bashProcess.stdin!.write(payload + '\n');
+            } catch (e) {
+                cleanup();
+                reject(e);
+            }
+        });
+    }
+
+    stop() {
+        if (this.bashProcess) {
+            this.bashProcess.kill();
+            this.bashProcess = null;
+        }
+    }
+
+    isActive(): boolean {
+        return this.bashProcess !== null && !this.bashProcess.killed;
+    }
+}
+
+const bashSession = new BashSessionManager();
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

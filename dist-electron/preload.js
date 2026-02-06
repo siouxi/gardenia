@@ -27,5 +27,10 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     listCondaEnvs: () => electron_1.ipcRenderer.invoke('env:list-conda'),
     setPythonEnv: (path) => electron_1.ipcRenderer.invoke('env:set-python', path),
     getPythonEnv: () => electron_1.ipcRenderer.invoke('env:get-python'),
+    // Bash API
+    startBashSession: () => electron_1.ipcRenderer.invoke('start-bash-session'),
+    executeBashCommand: (command) => electron_1.ipcRenderer.invoke('execute-bash-command', command),
+    stopBashSession: () => electron_1.ipcRenderer.invoke('stop-bash-session'),
+    getBashSessionStatus: () => electron_1.ipcRenderer.invoke('get-bash-session-status'),
 });
 //# sourceMappingURL=preload.js.map

@@ -277,38 +277,19 @@ electron_1.app.on('ready', () => {
     electron_1.ipcMain.handle('r-session-status', () => __awaiter(void 0, void 0, void 0, function* () {
         return { active: rSession.isActive() };
     }));
-    // Shell command execution
-    electron_1.ipcMain.handle('execute-shell-command', (event, command) => __awaiter(void 0, void 0, void 0, function* () {
-        return new Promise((resolve) => {
-            const cwd = process.env.HOME || '/';
-            const shellProcess = (0, child_process_1.spawn)('bash', ['-c', command], { cwd });
-            let output = '';
-            let errorOutput = '';
-            shellProcess.stdout.on('data', (data) => {
-                output += data.toString();
-            });
-            shellProcess.stderr.on('data', (data) => {
-                errorOutput += data.toString();
-            });
-            shellProcess.on('close', (code) => {
-                resolve({
-                    status: code === 0 ? 'success' : 'error',
-                    output: output || errorOutput,
-                    error: code !== 0 ? errorOutput : undefined
-                });
-            });
-            // Timeout after 30 seconds
-            setTimeout(() => {
-                if (!shellProcess.killed) {
-                    shellProcess.kill();
-                    resolve({
-                        status: 'error',
-                        output: '',
-                        error: 'Command timeout (30s)'
-                    });
-                }
-            }, 30000);
-        });
+    // Bash Session IPC Handlers
+    electron_1.ipcMain.handle('start-bash-session', () => __awaiter(void 0, void 0, void 0, function* () {
+        return yield bashSession.start();
+    }));
+    electron_1.ipcMain.handle('execute-bash-command', (event, command) => __awaiter(void 0, void 0, void 0, function* () {
+        return yield bashSession.executeCommand(command);
+    }));
+    electron_1.ipcMain.handle('stop-bash-session', () => __awaiter(void 0, void 0, void 0, function* () {
+        bashSession.stop();
+        return { success: true };
+    }));
+    electron_1.ipcMain.handle('get-bash-session-status', () => __awaiter(void 0, void 0, void 0, function* () {
+        return { active: bashSession.isActive() };
     }));
     // Python Session IPC Handlers
     electron_1.ipcMain.handle('start-python-session', () => __awaiter(void 0, void 0, void 0, function* () {
@@ -608,6 +589,120 @@ class PythonSessionManager {
     }
 }
 const pythonSession = new PythonSessionManager();
+// Bash Session Manager
+class BashSessionManager {
+    constructor() {
+        this.bashProcess = null;
+        this.pendingData = '';
+    }
+    start() {
+        return new Promise((resolve) => {
+            if (this.bashProcess) {
+                resolve({ success: true });
+                return;
+            }
+            console.log('Starting Bash bridge session...');
+            try {
+                let scriptPath = path_1.default.join(__dirname, 'bash_bridge.py');
+                if (!fs_1.default.existsSync(scriptPath)) {
+                    const devPath = path_1.default.join(__dirname, '../electron/bash_bridge.py');
+                    if (fs_1.default.existsSync(devPath)) {
+                        scriptPath = devPath;
+                    }
+                    else {
+                        console.error('Could not find bash_bridge.py');
+                        resolve({ success: false, error: 'Bridge script not found' });
+                        return;
+                    }
+                }
+                // We use the active python to run the bash bridge (since it's a python script)
+                // This ensures we have a valid runner.
+                this.bashProcess = (0, child_process_1.spawn)(activePythonPath, ['-u', scriptPath]);
+                this.bashProcess.on('error', (error) => {
+                    console.error('Bash process error:', error);
+                    this.bashProcess = null;
+                    resolve({ success: false, error: error.message });
+                });
+                this.bashProcess.on('close', (code) => {
+                    console.log('Bash process exited with code:', code);
+                    this.bashProcess = null;
+                });
+                // Wait for initial prompt
+                const onData = (chunk) => {
+                    var _a, _b;
+                    const str = chunk.toString();
+                    if (str.includes('\n')) {
+                        (_b = (_a = this.bashProcess) === null || _a === void 0 ? void 0 : _a.stdout) === null || _b === void 0 ? void 0 : _b.off('data', onData);
+                        resolve({ success: true });
+                    }
+                };
+                this.bashProcess.stdout.on('data', onData);
+            }
+            catch (error) {
+                console.error('Failed to spawn Bash process:', error);
+                resolve({ success: false, error: error.message });
+            }
+        });
+    }
+    executeCommand(command) {
+        return new Promise((resolve, reject) => {
+            if (!this.bashProcess) {
+                resolve({ status: 'error', output: '', error: 'Bash session not started' });
+                return;
+            }
+            const onData = (chunk) => {
+                const str = chunk.toString();
+                this.pendingData += str;
+                if (this.pendingData.includes('\n')) {
+                    const lines = this.pendingData.split('\n');
+                    const responseLine = lines[0];
+                    this.pendingData = lines.slice(1).join('\n');
+                    cleanup();
+                    try {
+                        const res = JSON.parse(responseLine);
+                        resolve({
+                            status: res.status === 'success' ? 'success' : 'error',
+                            output: res.output || '',
+                            prompt: res.prompt,
+                            error: res.error
+                        });
+                    }
+                    catch (e) {
+                        console.error('Failed to parse Bash response:', responseLine);
+                        resolve({
+                            status: 'error',
+                            output: this.pendingData,
+                            error: 'Protocol Error'
+                        });
+                    }
+                }
+            };
+            this.bashProcess.stdout.on('data', onData);
+            const cleanup = () => {
+                var _a, _b;
+                (_b = (_a = this.bashProcess) === null || _a === void 0 ? void 0 : _a.stdout) === null || _b === void 0 ? void 0 : _b.off('data', onData);
+            };
+            try {
+                const payload = JSON.stringify({ command });
+                this.bashProcess.stdin.write(payload + '\n');
+            }
+            catch (e) {
+                cleanup();
+                reject(e);
+            }
+        });
+    }
+    stop() {
+        if (this.bashProcess) {
+            this.bashProcess.kill();
+            this.bashProcess = null;
+        }
+    }
+    isActive() {
+        return this.bashProcess !== null && !this.bashProcess.killed;
+    }
+}
+const bashSession = new BashSessionManager();
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         electron_1.app.quit();

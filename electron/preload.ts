@@ -32,4 +32,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listCondaEnvs: () => ipcRenderer.invoke('env:list-conda'),
     setPythonEnv: (path: string) => ipcRenderer.invoke('env:set-python', path),
     getPythonEnv: () => ipcRenderer.invoke('env:get-python'),
+    // Bash API
+    startBashSession: () => ipcRenderer.invoke('start-bash-session'),
+    executeBashCommand: (command: string) => ipcRenderer.invoke('execute-bash-command', command),
+    stopBashSession: () => ipcRenderer.invoke('stop-bash-session'),
+    getBashSessionStatus: () => ipcRenderer.invoke('get-bash-session-status'),
 });

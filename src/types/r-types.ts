@@ -21,3 +21,10 @@ export interface PythonCommandResult {
     output: string;
     error?: string;
 }
+
+export interface BashCommandResult {
+    status: 'success' | 'error';
+    output: string;
+    prompt?: string;
+    error?: string;
+}

@@ -42,6 +42,13 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
     const [rVersion, setRVersion] = useState<string>('');
     const [shellInput, setShellInput] = useState('');
     const [shellHistory, setShellHistory] = useState<RHistoryEntry[]>([]);
+    const [bashSessionActive, setBashSessionActive] = useState(false);
+    const [bashPrompt, setBashPrompt] = useState('>'); // Default prompt
+
+    // Use bashSessionActive to suppress warning for now, or use it for UI
+    useEffect(() => {
+        if (bashSessionActive) console.log('Bash Active');
+    }, [bashSessionActive]);
 
     // Python State
     const [pythonInput, setPythonInput] = useState('');
@@ -144,6 +151,22 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                     "[Info] Ready for workflow execution (limited functionality)..."
                 ]);
             }
+
+            // Start Bash
+            try {
+                const bashRes = await (window as any).electronAPI.startBashSession();
+                if (bashRes.success) {
+                    setBashSessionActive(true);
+                    // We might get an initial prompt by sending an emtpy command? 
+                    // Or we just wait for first exec.
+                    // Ideally check status or send a ping.
+                    // Let's send a quick echo to get prompt
+                    const ping = await (window as any).electronAPI.executeBashCommand('echo "Header"');
+                    if (ping.prompt) setBashPrompt(ping.prompt);
+                }
+            } catch (e) {
+                console.error("Bash auto-start failed", e);
+            }
         };
         startSessions();
     }, []);
@@ -238,11 +261,17 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
         const command = shellInput.trim();
         setShellInput('');
 
+        // Handle 'clear' command locally
+        if (command === 'clear') {
+            setShellHistory([]);
+            return;
+        }
+
         // Hidden Test Node Trigger
         if (command === 'adatest') {
             onAddTestNode?.();
             setShellHistory(prev => [...prev, {
-                command: `$ ${command}`,
+                command: `${bashPrompt} ${command}`,
                 output: 'Test node added to canvas.',
                 status: 'success',
                 timestamp: new Date()
@@ -252,21 +281,25 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
 
         // Add command to history immediately
         setShellHistory(prev => [...prev, {
-            command: `$ ${command}`,
-            output: 'Executing...',
+            command: `${bashPrompt} ${command}`,
+            output: '', // Pending
             status: 'success',
             timestamp: new Date()
         }]);
 
         try {
-            const result = await window.electronAPI.executeShellCommand(command);
+            const result = await (window as any).electronAPI.executeBashCommand(command);
+
+            if (result.prompt) {
+                setBashPrompt(result.prompt);
+            }
 
             // Update the last entry with actual result
             setShellHistory(prev => {
                 const newHistory = [...prev];
                 newHistory[newHistory.length - 1] = {
-                    command: `$ ${command}`,
-                    output: result.output || (result.error ? `Error: ${result.error}` : 'Command completed'),
+                    command: `${bashPrompt} ${command}`,
+                    output: result.output || '',
                     status: result.status,
                     timestamp: new Date()
                 };
@@ -276,7 +309,7 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
             setShellHistory(prev => {
                 const newHistory = [...prev];
                 newHistory[newHistory.length - 1] = {
-                    command: `$ ${command}`,
+                    command: `${bashPrompt} ${command}`,
                     output: `Error: ${error}`,
                     status: 'error',
                     timestamp: new Date()
@@ -407,7 +440,7 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                         >
                             <div className="flex items-center gap-1.5">
                                 <TerminalIcon size={12} />
-                                Terminal
+                                Bash
                             </div>
                         </button>
                         <button
@@ -453,7 +486,7 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                     <>
                         {shellHistory.length === 0 && (
                             <div className="text-slate-400 text-center py-8">
-                                <p>Interactive shell terminal</p>
+                                <p>Interactive Bash Terminal</p>
                                 <p className="text-xs mt-2">Type commands below to execute</p>
                             </div>
                         )}
@@ -611,17 +644,17 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                 </div>
             )}
 
-            {/* Shell Input Field */}
+            {/* Bash Input Field */}
             {activeTab === 'terminal' && (
                 <div className="border-t border-slate-700 p-2 bg-slate-800/50 flex items-center gap-2">
                     <div className="flex items-center gap-2 flex-1">
-                        <span className="text-green-400 font-mono text-xs">$</span>
+                        <span className="text-green-400 font-mono text-xs whitespace-nowrap">{bashPrompt}</span>
                         <input
                             type="text"
                             value={shellInput}
                             onChange={(e) => setShellInput(e.target.value)}
                             onKeyDown={handleShellKeyDown}
-                            placeholder="Enter shell command..."
+                            placeholder="Enter bash command..."
                             className="flex-1 bg-transparent text-slate-300 text-xs font-mono outline-none"
                             autoFocus
                         />
@@ -633,6 +666,7 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                     >
                         Run
                     </button>
+                    {/* Add Stop/Restart logic if desired, matching other tabs, but omitting for brevity for now unless requested specifically */}
                 </div>
             )}
 
