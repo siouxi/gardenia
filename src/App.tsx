@@ -3,6 +3,7 @@ import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge,
 import '@xyflow/react/dist/style.css';
 
 import { Sidebar } from './components/Sidebar';
+import { NodesSidebar } from './components/NodesSidebar';
 import { Terminal } from './components/Terminal';
 import { Inspector } from './components/Inspector';
 import { GardeniasLogo } from './components/GardeniasLogo';
@@ -558,9 +559,18 @@ const Flow = () => {
                         style={{ width: leftPanelWidth }}
                     >
                         <div className="h-8 bg-[#2a2a2a] flex items-center px-3 border-b border-[#121212] text-xs font-semibold text-[#bbb]">
-                            GARDENS
+                            {viewMode === 'code' ? 'NODES' : 'GARDENS'}
                         </div>
-                        <Sidebar />
+
+                        {viewMode === 'code' ? (
+                            <NodesSidebar
+                                nodes={nodes}
+                                onNodeSelect={(id) => setSelectedNodeId(id)}
+                                selectedNodeId={selectedNodeId}
+                            />
+                        ) : (
+                            <Sidebar />
+                        )}
 
                         {/* Resize Handle Right */}
                         <div

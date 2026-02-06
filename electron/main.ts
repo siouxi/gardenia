@@ -175,9 +175,14 @@ class RSessionManager {
 const rSession = new RSessionManager();
 
 function createWindow() {
+    const iconPath = isDev
+        ? path.join(__dirname, '../public/icon.svg')
+        : path.join(__dirname, '../dist/icon.svg');
+
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        icon: iconPath,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,

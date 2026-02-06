@@ -54,11 +54,25 @@ export const ResolveNode = ({ data, selected }: NodeProps) => {
             ${selected ? 'ring-1 ring-[#34d399] border-[#34d399]' : 'hover:border-[#404040]'}
         `}>
             {/* Header */}
-            <div className="bg-[#252525] rounded-t-[5px] px-3 py-2 flex items-center gap-2 border-b border-[#2a2a2a]">
-                <Icon size={14} className="text-[#34d399]" />
-                <span className="text-[12px] font-bold text-[#e1e1e1] tracking-wide truncate max-w-[100px]">
-                    {String(data.label)}
-                </span>
+            <div className="bg-[#252525] rounded-t-[5px] px-3 py-2 flex items-center justify-between border-b border-[#2a2a2a] gap-2">
+                <div className="flex items-center gap-2 overflow-hidden">
+                    <Icon size={14} className="text-[#34d399] shrink-0" />
+                    <span className="text-[12px] font-bold text-[#e1e1e1] tracking-wide truncate max-w-[100px]">
+                        {String(data.label)}
+                    </span>
+                </div>
+                {/* Language Badge */}
+                {data.toolId !== 'flow-start' && data.toolId !== 'flow-end' && (
+                    <div className={`
+                        px-1.5 py-0.5 rounded-[2px] text-[9px] font-bold tracking-wider
+                        ${data.language === 'r'
+                            ? 'bg-[#1e3a8a] text-blue-200 border border-[#3b82f6]/30'
+                            : 'bg-[#3f3f46] text-yellow-200 border border-yellow-500/30'
+                        }
+                    `}>
+                        {data.language === 'r' ? 'R' : 'PY'}
+                    </div>
+                )}
             </div>
 
             {/* Content Body with IO Ports */}

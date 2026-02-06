@@ -169,9 +169,13 @@ class RSessionManager {
 }
 const rSession = new RSessionManager();
 function createWindow() {
+    const iconPath = isDev
+        ? path_1.default.join(__dirname, '../public/icon.svg')
+        : path_1.default.join(__dirname, '../dist/icon.svg');
     mainWindow = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
+        icon: iconPath,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,
