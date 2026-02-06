@@ -25,6 +25,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     uninstallRPackage: (name) => electron_1.ipcRenderer.invoke('package:uninstall-r', name),
     // Environment API
     listCondaEnvs: () => electron_1.ipcRenderer.invoke('env:list-conda'),
+    createCondaEnv: (name) => electron_1.ipcRenderer.invoke('env:create-conda', name),
     setPythonEnv: (path) => electron_1.ipcRenderer.invoke('env:set-python', path),
     getPythonEnv: () => electron_1.ipcRenderer.invoke('env:get-python'),
     // Bash API

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, Send, Terminal } from 'lucide-react';
+import { Trash2, RefreshCw, Send, Terminal, Plus, X } from 'lucide-react';
 import * as path from 'path-browserify'; // We need browser compatible path join
 
 interface InstalledPackage {
@@ -22,6 +22,8 @@ export const PackageManager: React.FC = () => {
     const [currentEnv, setCurrentEnv] = useState<string>(''); // Path
     const [searchQuery, setSearchQuery] = useState('');
     const [installName, setInstallName] = useState('');
+    const [isCreatingEnv, setIsCreatingEnv] = useState(false);
+    const [newEnvName, setNewEnvName] = useState('');
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<string>('');
     const [consoleOutput, setConsoleOutput] = useState<string>('');
@@ -77,6 +79,31 @@ export const PackageManager: React.FC = () => {
         setCurrentEnv(newPath);
         await (window as any).electronAPI.setPythonEnv(newPath);
         fetchPackages(); // Reload packages for new env
+    };
+
+    const handleCreateEnv = async () => {
+        if (!newEnvName.trim()) return;
+        setLoading(true);
+        setStatus(`Creating environment '${newEnvName}'... This may take a few minutes.`);
+        setConsoleOutput(''); // Clear old output
+
+        try {
+            const result = await (window as any).electronAPI.createCondaEnv(newEnvName);
+            setConsoleOutput(result.output || '');
+
+            if (result.success) {
+                setStatus(`Environment '${newEnvName}' created successfully.`);
+                setNewEnvName('');
+                setIsCreatingEnv(false);
+                await fetchEnvs(); // Refresh list to see new env
+            } else {
+                setStatus(`Failed to create environment '${newEnvName}'. See logs.`);
+            }
+        } catch (e) {
+            setStatus(`Error creating environment: ${e}`);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleInstall = async () => {
@@ -152,7 +179,7 @@ export const PackageManager: React.FC = () => {
                     className={`px-4 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-2 ${activeTab === 'python' ? 'bg-[#37373d] text-white' : 'hover:bg-[#2a2a2d] text-[#888]'}`}
                 >
                     <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                    Python (Pip)
+                    Python (Conda)
                 </button>
                 <button
                     onClick={() => setActiveTab('r')}
@@ -189,6 +216,34 @@ export const PackageManager: React.FC = () => {
                             </option>
                         ))}
                     </select>
+
+                    {/* Create New Env UI */}
+                    {isCreatingEnv ? (
+                        <div className="flex items-center gap-2 bg-[#252526] p-1 rounded border border-[#007fd4] animate-in fade-in slide-in-from-left-2">
+                            <input
+                                type="text"
+                                placeholder="Env Name"
+                                value={newEnvName}
+                                onChange={e => setNewEnvName(e.target.value)}
+                                className="bg-[#111] text-xs px-2 py-0.5 rounded outline-none w-24 border border-[#444]"
+                                autoFocus
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') handleCreateEnv();
+                                    if (e.key === 'Escape') setIsCreatingEnv(false);
+                                }}
+                            />
+                            <button onClick={handleCreateEnv} disabled={loading} className="text-green-400 hover:text-green-300"><Plus size={14} /></button>
+                            <button onClick={() => setIsCreatingEnv(false)} className="text-red-400 hover:text-red-300"><X size={14} /></button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => setIsCreatingEnv(true)}
+                            className="p-1 hover:bg-[#333] rounded text-[#888] hover:text-[#ccc]"
+                            title="Create New Conda Environment"
+                        >
+                            <Plus size={14} />
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -269,7 +324,7 @@ export const PackageManager: React.FC = () => {
                             </button>
                         </div>
                         <p className="text-[10px] text-[#666]">
-                            Installing via {activeTab === 'python' ? 'pip install' : 'install.packages()'}
+                            Installing via {activeTab === 'python' ? 'conda install' : 'install.packages()'}
                         </p>
                     </div>
 

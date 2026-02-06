@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Environment API
     listCondaEnvs: () => ipcRenderer.invoke('env:list-conda'),
+    createCondaEnv: (name: string) => ipcRenderer.invoke('env:create-conda', name),
     setPythonEnv: (path: string) => ipcRenderer.invoke('env:set-python', path),
     getPythonEnv: () => ipcRenderer.invoke('env:get-python'),
     // Bash API

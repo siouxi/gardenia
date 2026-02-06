@@ -359,11 +359,20 @@ app.on('ready', () => {
     // PYTHON
     ipcMain.handle('package:list-python', async () => {
         return new Promise((resolve) => {
-            const proc = spawn(activePythonPath, ['-m', 'pip', 'list', '--format=json']);
+            // Determine prefix from activePythonPath
+            let args = ['list', '--json'];
+            if (activePythonPath && path.isAbsolute(activePythonPath)) {
+                // activePythonPath is usually .../bin/python. Prefix is .../
+                const prefix = path.dirname(path.dirname(activePythonPath));
+                args.push('-p', prefix);
+            }
+
+            const proc = spawn('conda', args);
             let data = '';
             proc.stdout.on('data', d => data += d);
             proc.on('close', () => {
                 try {
+                    // Conda list --json returns array of objects with "name" and "version" fields
                     resolve(JSON.parse(data));
                 } catch {
                     resolve([]);
@@ -374,7 +383,13 @@ app.on('ready', () => {
 
     ipcMain.handle('package:install-python', async (event, name) => {
         return new Promise((resolve) => {
-            const proc = spawn(activePythonPath, ['-m', 'pip', 'install', name]);
+            let args = ['install', name, '-y'];
+            if (activePythonPath && path.isAbsolute(activePythonPath)) {
+                const prefix = path.dirname(path.dirname(activePythonPath));
+                args.push('-p', prefix);
+            }
+
+            const proc = spawn('conda', args);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -386,7 +401,13 @@ app.on('ready', () => {
 
     ipcMain.handle('package:uninstall-python', async (event, name) => {
         return new Promise((resolve) => {
-            const proc = spawn(activePythonPath, ['-m', 'pip', 'uninstall', '-y', name]);
+            let args = ['remove', name, '-y'];
+            if (activePythonPath && path.isAbsolute(activePythonPath)) {
+                const prefix = path.dirname(path.dirname(activePythonPath));
+                args.push('-p', prefix);
+            }
+
+            const proc = spawn('conda', args);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -464,6 +485,32 @@ app.on('ready', () => {
                 } catch {
                     resolve([]);
                 }
+            });
+        });
+    });
+
+    ipcMain.handle('env:create-conda', async (event, envName: string) => {
+        return new Promise((resolve) => {
+            // Default libraries for Gardenia
+            const packages = ['python', 'pip', 'pandas', 'numpy', 'matplotlib', 'scikit-learn'];
+            console.log(`Creating Conda env: ${envName} with packages: ${packages.join(', ')}`);
+
+            const proc = spawn('conda', ['create', '-n', envName, ...packages, '-y']);
+
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+
+            proc.on('close', (code) => {
+                resolve({
+                    success: code === 0,
+                    output,
+                    error: code !== 0 ? 'Creation failed' : undefined
+                });
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, output: '', error: err.message });
             });
         });
     });

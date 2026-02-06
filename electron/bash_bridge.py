@@ -9,10 +9,19 @@ from datetime import datetime
 
 def get_conda_env():
     # Try to get conda env from environment variable
+    # CONDA_DEFAULT_ENV is reliable for the name (e.g. 'base' or 'myenv')
+    env_name = os.environ.get('CONDA_DEFAULT_ENV')
+    if env_name:
+        return env_name
+        
     env_path = os.environ.get('CONDA_PREFIX')
     if env_path:
-        return os.path.basename(env_path)
-    return "base" # simplistic fallback or check if we are actually in base
+        basename = os.path.basename(env_path)
+        # Fallback heuristic: sometimes prefix is .../miniconda3 which implies base
+        if basename in ['miniconda3', 'anaconda3', 'miniconda', 'anaconda']:
+            return 'base'
+        return basename
+    return "base"
 
 def generate_prompt(cwd):
     # Format: HH:MM:SS (env) user@host cwd
