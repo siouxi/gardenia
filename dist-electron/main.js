@@ -338,6 +338,93 @@ electron_1.app.on('ready', () => {
             return filePaths[0];
         }
     }));
+    // Package Manager IPC Handlers
+    // PYTHON
+    electron_1.ipcMain.handle('package:list-python', () => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            const proc = (0, child_process_1.spawn)('python3', ['-m', 'pip', 'list', '--format=json']);
+            let data = '';
+            proc.stdout.on('data', d => data += d);
+            proc.on('close', () => {
+                try {
+                    resolve(JSON.parse(data));
+                }
+                catch (_a) {
+                    resolve([]);
+                }
+            });
+        });
+    }));
+    electron_1.ipcMain.handle('package:install-python', (event, name) => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            const proc = (0, child_process_1.spawn)('python3', ['-m', 'pip', 'install', name]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    }));
+    electron_1.ipcMain.handle('package:uninstall-python', (event, name) => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            const proc = (0, child_process_1.spawn)('python3', ['-m', 'pip', 'uninstall', '-y', name]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    }));
+    // R
+    electron_1.ipcMain.handle('package:list-r', () => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            // R script to list installed packages as JSON
+            const rScript = `
+                installed <- installed.packages()[,c("Package", "Version")]
+                json <- jsonlite::toJSON(as.data.frame(installed), auto_unbox=TRUE)
+                cat(json)
+            `;
+            const proc = (0, child_process_1.spawn)('Rscript', ['-e', rScript]);
+            let data = '';
+            proc.stdout.on('data', d => data += d);
+            proc.on('close', () => {
+                try {
+                    resolve(JSON.parse(data));
+                }
+                catch (e) {
+                    console.error('Failed to parse R package list:', e);
+                    resolve([]); // Likely jsonlite not installed
+                }
+            });
+        });
+    }));
+    electron_1.ipcMain.handle('package:install-r', (event, name) => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            // Choose a CRAN mirror
+            const rScript = `install.packages('${name}', repos='http://cran.rstudio.com')`;
+            const proc = (0, child_process_1.spawn)('Rscript', ['-e', rScript]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    }));
+    electron_1.ipcMain.handle('package:uninstall-r', (event, name) => __awaiter(void 0, void 0, void 0, function* () {
+        return new Promise((resolve) => {
+            const rScript = `remove.packages('${name}')`;
+            const proc = (0, child_process_1.spawn)('Rscript', ['-e', rScript]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    }));
 });
 // Python Session Manager
 class PythonSessionManager {

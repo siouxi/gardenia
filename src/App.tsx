@@ -12,6 +12,7 @@ import { PostItNode } from './components/PostItNode';
 import { CodeEditor } from './components/CodeEditor';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
+import { PackageManager } from './components/PackageManager';
 import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
 import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
@@ -768,18 +769,14 @@ const Flow = () => {
             {/* Preferences Modal */}
             {isPreferencesOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
-                    <div className="bg-[#1f1f23] border border-[#333] rounded-lg shadow-2xl p-6 w-[400px] max-w-full transform scale-100 transition-all">
+                    <div className="bg-[#1f1f23] border border-[#333] rounded-lg shadow-2xl p-6 w-[800px] max-w-full transform scale-100 transition-all">
                         <h2 className="text-xl font-bold text-[#ccc] mb-4 flex items-center gap-2">
                             <Settings size={20} />
-                            Preferences
+                            Library Manager
                         </h2>
 
-                        <div className="flex flex-col items-center justify-center py-8 text-[#666] bg-[#121212] rounded border border-[#2a2a2a] mb-6">
-                            <Settings size={48} className="mb-4 opacity-50 animate-spin-slow" style={{ animationDuration: '10s' }} />
-                            <p className="text-lg font-medium text-[#ccc]">Coming Soon</p>
-                            <p className="text-sm mt-2 text-center max-w-[80%]">
-                                Global application settings and configuration options will be available here.
-                            </p>
+                        <div className="flex flex-col h-[500px] mb-4">
+                            <PackageManager />
                         </div>
 
                         <div className="flex justify-end">

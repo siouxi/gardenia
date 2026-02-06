@@ -374,6 +374,97 @@ app.on('ready', () => {
             return filePaths[0];
         }
     });
+
+    // Package Manager IPC Handlers
+    // PYTHON
+    ipcMain.handle('package:list-python', async () => {
+        return new Promise((resolve) => {
+            const proc = spawn('python3', ['-m', 'pip', 'list', '--format=json']);
+            let data = '';
+            proc.stdout.on('data', d => data += d);
+            proc.on('close', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch {
+                    resolve([]);
+                }
+            });
+        });
+    });
+
+    ipcMain.handle('package:install-python', async (event, name) => {
+        return new Promise((resolve) => {
+            const proc = spawn('python3', ['-m', 'pip', 'install', name]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    });
+
+    ipcMain.handle('package:uninstall-python', async (event, name) => {
+        return new Promise((resolve) => {
+            const proc = spawn('python3', ['-m', 'pip', 'uninstall', '-y', name]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    });
+
+    // R
+    ipcMain.handle('package:list-r', async () => {
+        return new Promise((resolve) => {
+            // R script to list installed packages as JSON
+            const rScript = `
+                installed <- installed.packages()[,c("Package", "Version")]
+                json <- jsonlite::toJSON(as.data.frame(installed), auto_unbox=TRUE)
+                cat(json)
+            `;
+            const proc = spawn('Rscript', ['-e', rScript]);
+            let data = '';
+            proc.stdout.on('data', d => data += d);
+            proc.on('close', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    console.error('Failed to parse R package list:', e);
+                    resolve([]); // Likely jsonlite not installed
+                }
+            });
+        });
+    });
+
+    ipcMain.handle('package:install-r', async (event, name) => {
+        return new Promise((resolve) => {
+            // Choose a CRAN mirror
+            const rScript = `install.packages('${name}', repos='http://cran.rstudio.com')`;
+            const proc = spawn('Rscript', ['-e', rScript]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    });
+
+    ipcMain.handle('package:uninstall-r', async (event, name) => {
+        return new Promise((resolve) => {
+            const rScript = `remove.packages('${name}')`;
+            const proc = spawn('Rscript', ['-e', rScript]);
+            let output = '';
+            proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => output += d);
+            proc.on('close', (code) => {
+                resolve({ success: code === 0, output });
+            });
+        });
+    });
 });
 
 // Python Session Manager

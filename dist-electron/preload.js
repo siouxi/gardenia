@@ -16,5 +16,12 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     stopPythonSession: () => electron_1.ipcRenderer.invoke('stop-python-session'),
     // File Dialog API
     openFileDialog: () => electron_1.ipcRenderer.invoke('dialog:openFile'),
+    // Package Manager API
+    listPythonPackages: () => electron_1.ipcRenderer.invoke('package:list-python'),
+    installPythonPackage: (name) => electron_1.ipcRenderer.invoke('package:install-python', name),
+    uninstallPythonPackage: (name) => electron_1.ipcRenderer.invoke('package:uninstall-python', name),
+    listRPackages: () => electron_1.ipcRenderer.invoke('package:list-r'),
+    installRPackage: (name) => electron_1.ipcRenderer.invoke('package:install-r', name),
+    uninstallRPackage: (name) => electron_1.ipcRenderer.invoke('package:uninstall-r', name),
 });
 //# sourceMappingURL=preload.js.map

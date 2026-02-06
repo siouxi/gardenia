@@ -18,4 +18,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stopPythonSession: () => ipcRenderer.invoke('stop-python-session'),
     // File Dialog API
     openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
+
+    // Package Manager API
+    listPythonPackages: () => ipcRenderer.invoke('package:list-python'),
+    installPythonPackage: (name: string) => ipcRenderer.invoke('package:install-python', name),
+    uninstallPythonPackage: (name: string) => ipcRenderer.invoke('package:uninstall-python', name),
+
+    listRPackages: () => ipcRenderer.invoke('package:list-r'),
+    installRPackage: (name: string) => ipcRenderer.invoke('package:install-r', name),
+    uninstallRPackage: (name: string) => ipcRenderer.invoke('package:uninstall-r', name),
 });
