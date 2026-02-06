@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
+import fs from 'fs';
 
 let mainWindow: BrowserWindow | null;
 
@@ -334,17 +335,8 @@ app.on('ready', () => {
 // Python Session Manager
 class PythonSessionManager {
     private pythonProcess: ChildProcess | null = null;
-    private outputBuffer: string = '';
-    private errorBuffer: string = '';
-
-    private cleanOutput(text: string): string {
-        // Remove VS Code shell integration sequences (OSC 633)
-        // Format: ESC ] 633 ; ... (BEL | ST)
-        // Regex: /\x1b\]633;.*?(?:\x07|\x1b\\)/g
-        let clean = text.replace(/\x1b\]633;.*?(?:\x07|\x1b\\)/g, '');
-
-        return clean;
-    }
+    // Buffer to handle split chunks of JSON response
+    private pendingData: string = '';
 
     start(): Promise<{ success: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
@@ -353,54 +345,32 @@ class PythonSessionManager {
                 return;
             }
 
-            console.log('Starting Python session...');
+            console.log('Starting Python bridge session...');
 
             try {
-                // Filter out VS Code environment variables to prevent shell integration injection
-                const env = { ...process.env };
-                delete env['VSCODE_SHELL_INTEGRATION'];
-                delete env['TERM_PROGRAM'];
-                delete env['TERM_PROGRAM_VERSION'];
-                delete env['VSCODE_INJECTION'];
+                // Robust path resolution for python_bridge.py
+                let scriptPath = path.join(__dirname, 'python_bridge.py');
 
-                // Start Python in interactive mode (-i) and unbuffered (-u)
-                // Use system python explicitly to avoid Anaconda
-                this.pythonProcess = spawn('/usr/bin/python3', ['-i', '-u'], { env });
-
-                let initialOutput = '';
-                let resolved = false;
-
-                const onData = (data: Buffer) => {
-                    const output = this.cleanOutput(data.toString());
-                    initialOutput += output;
-                    console.log('Python output:', output);
-
-                    // Check if Python is ready (when we see the prompt)
-                    if (output.includes('>>>') && !resolved) {
-                        resolved = true;
-                        this.pythonProcess!.stdout!.off('data', onData);
-                        this.pythonProcess!.stderr!.off('data', onData); // Python often treats interactive banner as stderr
-
-                        // Extract version if available
-                        const versionMatch = initialOutput.match(/Python ([\d.]+)/);
-                        const version = versionMatch ? versionMatch[1] : undefined;
-
-                        console.log('Python session started successfully, version:', version);
-                        resolve({ success: true, version });
+                // If not found in current dir (production/dist), try dev path
+                if (!fs.existsSync(scriptPath)) {
+                    const devPath = path.join(__dirname, '../electron/python_bridge.py');
+                    if (fs.existsSync(devPath)) {
+                        scriptPath = devPath;
+                    } else {
+                        console.error('Could not find python_bridge.py in:', scriptPath, 'or', devPath);
                     }
-                };
+                }
 
-                this.pythonProcess.stdout!.on('data', onData);
-                // Python interactive mode often writes banner to stderr
-                this.pythonProcess.stderr!.on('data', onData);
+                console.log(`Using Python bridge script at: ${scriptPath}`);
+
+                // Spawn the bridge script
+                // Using "python3" assuming it is in PATH. 
+                this.pythonProcess = spawn('python3', ['-u', scriptPath]);
 
                 this.pythonProcess.on('error', (error) => {
                     console.error('Python process error:', error);
-                    if (!resolved) {
-                        resolved = true;
-                        this.pythonProcess = null;
-                        resolve({ success: false, error: error.message });
-                    }
+                    this.pythonProcess = null;
+                    resolve({ success: false, error: error.message });
                 });
 
                 this.pythonProcess.on('close', (code) => {
@@ -408,15 +378,25 @@ class PythonSessionManager {
                     this.pythonProcess = null;
                 });
 
-                // Timeout after 10 seconds
-                setTimeout(() => {
-                    if (!resolved) {
-                        resolved = true;
-                        console.error('Python startup timeout after 10 seconds');
-                        console.error('Output received:', initialOutput);
-                        resolve({ success: false, error: 'Python startup timeout' });
+                // In this bridge mode, we don't naturally get a version printout on startup.
+                // We can run a quick command to check health and version.
+
+                // Give it a moment to spawn then verify
+                setTimeout(async () => {
+                    if (this.pythonProcess) {
+                        try {
+                            const verRes = await this.executeCommand('import sys; print(f"Python {sys.version.split()[0]}")');
+                            const version = verRes.output.replace('Python ', '').trim();
+                            console.log('Python session started successfully, version:', version);
+                            resolve({ success: true, version });
+                        } catch (e: any) {
+                            resolve({ success: false, error: 'Failed to verify python session: ' + e.message });
+                        }
+                    } else {
+                        resolve({ success: false, error: 'Process exited immediately' });
                     }
-                }, 10000);
+                }, 500);
+
             } catch (error: any) {
                 console.error('Failed to spawn Python process:', error);
                 resolve({ success: false, error: error.message });
@@ -425,93 +405,66 @@ class PythonSessionManager {
     }
 
     executeCommand(command: string): Promise<{ status: 'success' | 'error'; output: string; error?: string }> {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             if (!this.pythonProcess) {
                 resolve({ status: 'error', output: '', error: 'Python session not started' });
                 return;
             }
 
-            this.outputBuffer = '';
-            this.errorBuffer = '';
+            // Prepare the one-time listener for the response
+            const onData = (chunk: Buffer) => {
+                const str = chunk.toString();
+                this.pendingData += str;
 
-            const onStdout = (data: Buffer) => {
-                this.outputBuffer += data.toString();
-            };
+                // Check if we have a complete newline-terminated JSON object
+                if (this.pendingData.includes('\n')) {
+                    const lines = this.pendingData.split('\n');
+                    // Process the first line as our response
+                    const responseLine = lines[0];
+                    // Keep the rest in buffer (rare edge case of rapid firing)
+                    this.pendingData = lines.slice(1).join('\n');
 
-            const onStderr = (data: Buffer) => {
-                // In interactive mode, prompts often come through stderr, ignore them for error detection
-                const str = data.toString();
-                if (!str.trim().endsWith('>>>') && !str.trim().endsWith('...')) {
-                    this.errorBuffer += str;
-                }
-                // Also capture stderr as output because things like warnings appear there
-                this.outputBuffer += str;
-            };
-
-            this.pythonProcess.stdout!.on('data', onStdout);
-            this.pythonProcess.stderr!.on('data', onStderr);
-
-            // Write command to Python process
-            this.pythonProcess.stdin!.write(command + '\n');
-
-            // Heuristic to detect end of command execution:
-            // Since Python interactive shell echoes prompts, we wait for '>>> '
-            // This is non-trivial strictly with streams, but for a basic integration this polling/timeout approach
-            // combined with prompt detection is often used.
-            // A more robust way is to wrap execution, but let's try reading streams first.
-
-            const checkInterval = setInterval(() => {
-                if (this.outputBuffer.trim().endsWith('>>>') || this.outputBuffer.trim().endsWith('...')) {
-                    clearInterval(checkInterval);
                     cleanup();
 
-                    // Clean up the output
-                    // Remove the command echo (if any) and the trailing prompt
-                    // First strip raw buffer of any artifacts
-                    let cleanOutput = this.cleanOutput(this.outputBuffer);
-
-                    // Remove the user's command if it was echoed
-                    if (cleanOutput.startsWith(command)) {
-                        cleanOutput = cleanOutput.substring(command.length);
+                    try {
+                        const res = JSON.parse(responseLine);
+                        resolve({
+                            status: res.status === 'success' ? 'success' : 'error',
+                            output: res.output || '',
+                            error: res.error || (res.status === 'error' ? res.output : undefined)
+                        });
+                    } catch (e) {
+                        console.error('Failed to parse Python response:', responseLine);
+                        resolve({
+                            status: 'error',
+                            output: this.pendingData, // Return raw as output for debug
+                            error: 'Protocol Error: Invalid JSON from Python bridge'
+                        });
                     }
-
-                    // Remove the prompt
-                    cleanOutput = cleanOutput.replace(/>>>\s*$/, '').replace(/\.\.\.\s*$/, '').trim();
-
-                    const hasError = this.errorBuffer.length > 0; // Simple error check
-
-                    resolve({
-                        status: hasError ? 'error' : 'success',
-                        output: cleanOutput,
-                        error: hasError ? this.errorBuffer : undefined
-                    });
                 }
-            }, 50);
-
-            const cleanup = () => {
-                this.pythonProcess!.stdout!.off('data', onStdout);
-                this.pythonProcess!.stderr!.off('data', onStderr);
             };
 
-            // Timeout safety
-            setTimeout(() => {
-                clearInterval(checkInterval);
+            // Should ideally not use 'once' if we expect fragmented packets, but for now logic above handles it.
+            // We attach 'data' listener.
+            this.pythonProcess.stdout!.on('data', onData);
+
+            const cleanup = () => {
+                this.pythonProcess?.stdout?.off('data', onData);
+            };
+
+            // Send command as JSON
+            try {
+                const payload = JSON.stringify({ command });
+                this.pythonProcess.stdin!.write(payload + '\n');
+            } catch (e) {
                 cleanup();
-                if (!this.outputBuffer.trim().endsWith('>>>')) {
-                    // We timed out waiting for prompt
-                    resolve({
-                        status: 'error',
-                        output: this.outputBuffer,
-                        error: 'Command execution timed out or prompt not found'
-                    });
-                }
-            }, 5000); // 5s timeout for simple commands
+                reject(e);
+            }
         });
     }
 
     stop() {
         if (this.pythonProcess) {
-            this.pythonProcess.stdin!.write('exit()\n');
             this.pythonProcess.kill();
             this.pythonProcess = null;
         }
