@@ -546,42 +546,68 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
             </div>
 
             {/* R Input Field */}
-            {activeTab === 'r' && rSessionActive && (
+            {activeTab === 'r' && (
                 <div className="border-t border-slate-700 p-2 bg-slate-800/50 flex items-center gap-2">
-                    <div className="flex items-center gap-2 flex-1">
-                        <span className="text-blue-400 font-mono text-xs">R&gt;</span>
-                        <input
-                            type="text"
-                            value={rInput}
-                            onChange={(e) => setRInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Enter R command..."
-                            className="flex-1 bg-transparent text-slate-300 text-xs font-mono outline-none"
-                            autoFocus
-                        />
-                    </div>
-                    <button
-                        onClick={executeRCommand}
-                        disabled={!rInput.trim()}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Run
-                    </button>
-                    <button
-                        onClick={clearRHistory}
-                        className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                        title="Clear Output"
-                    >
-                        <Eraser size={12} />
-                        Clear
-                    </button>
-                    <button
-                        onClick={stopRSession}
-                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                    >
-                        <X size={12} />
-                        Stop
-                    </button>
+                    {rSessionActive ? (
+                        <>
+                            <div className="flex items-center gap-2 flex-1">
+                                <span className="text-blue-400 font-mono text-xs">R&gt;</span>
+                                <input
+                                    type="text"
+                                    value={rInput}
+                                    onChange={(e) => setRInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="Enter R command..."
+                                    className="flex-1 bg-transparent text-slate-300 text-xs font-mono outline-none"
+                                    autoFocus
+                                />
+                            </div>
+                            <button
+                                onClick={executeRCommand}
+                                disabled={!rInput.trim()}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Run
+                            </button>
+                            <button
+                                onClick={clearRHistory}
+                                className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                                title="Clear Output"
+                            >
+                                <Eraser size={12} />
+                                Clear
+                            </button>
+                            <button
+                                onClick={stopRSession}
+                                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                            >
+                                <X size={12} />
+                                Stop
+                            </button>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-between w-full">
+                            <span className="text-slate-500 text-xs italic">Session stopped</span>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={clearRHistory}
+                                    className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                                    title="Clear Output"
+                                >
+                                    <Eraser size={12} />
+                                    Clear
+                                </button>
+                                <button
+                                    onClick={startRSession}
+                                    disabled={rSessionLoading}
+                                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded transition-colors flex items-center gap-1 disabled:opacity-50"
+                                >
+                                    <Play size={12} />
+                                    {rSessionLoading ? 'Starting...' : 'Start Session'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -611,42 +637,68 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
             )}
 
             {/* Python Input Field */}
-            {activeTab === 'python' && pythonSessionActive && (
+            {activeTab === 'python' && (
                 <div className="border-t border-slate-700 p-2 bg-slate-800/50 flex items-center gap-2">
-                    <div className="flex items-center gap-2 flex-1">
-                        <span className="text-yellow-400 font-mono text-xs">PY&gt;</span>
-                        <input
-                            type="text"
-                            value={pythonInput}
-                            onChange={(e) => setPythonInput(e.target.value)}
-                            onKeyDown={handlePythonKeyDown}
-                            placeholder="Enter Python command..."
-                            className="flex-1 bg-transparent text-slate-300 text-xs font-mono outline-none"
-                            autoFocus
-                        />
-                    </div>
-                    <button
-                        onClick={executePythonCommand}
-                        disabled={!pythonInput.trim()}
-                        className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Run
-                    </button>
-                    <button
-                        onClick={clearPythonHistory}
-                        className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                        title="Clear Output"
-                    >
-                        <Eraser size={12} />
-                        Clear
-                    </button>
-                    <button
-                        onClick={stopPythonSession}
-                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors flex items-center gap-1"
-                    >
-                        <X size={12} />
-                        Stop
-                    </button>
+                    {pythonSessionActive ? (
+                        <>
+                            <div className="flex items-center gap-2 flex-1">
+                                <span className="text-yellow-400 font-mono text-xs">PY&gt;</span>
+                                <input
+                                    type="text"
+                                    value={pythonInput}
+                                    onChange={(e) => setPythonInput(e.target.value)}
+                                    onKeyDown={handlePythonKeyDown}
+                                    placeholder="Enter Python command..."
+                                    className="flex-1 bg-transparent text-slate-300 text-xs font-mono outline-none"
+                                    autoFocus
+                                />
+                            </div>
+                            <button
+                                onClick={executePythonCommand}
+                                disabled={!pythonInput.trim()}
+                                className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Run
+                            </button>
+                            <button
+                                onClick={clearPythonHistory}
+                                className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                                title="Clear Output"
+                            >
+                                <Eraser size={12} />
+                                Clear
+                            </button>
+                            <button
+                                onClick={stopPythonSession}
+                                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                            >
+                                <X size={12} />
+                                Stop
+                            </button>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-between w-full">
+                            <span className="text-slate-500 text-xs italic">Session stopped</span>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={clearPythonHistory}
+                                    className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                                    title="Clear Output"
+                                >
+                                    <Eraser size={12} />
+                                    Clear
+                                </button>
+                                <button
+                                    onClick={startPythonSession}
+                                    disabled={pythonSessionLoading}
+                                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded transition-colors flex items-center gap-1 disabled:opacity-50"
+                                >
+                                    <Play size={12} />
+                                    {pythonSessionLoading ? 'Starting...' : 'Start Session'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
