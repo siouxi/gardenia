@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, ChevronUp, ChevronDown, Monitor, Play, X } from 'lucide-react';
+import { Terminal as TerminalIcon, ChevronUp, ChevronDown, Monitor, Play, X, Eraser } from 'lucide-react';
 import { RCommandResult, PythonCommandResult } from '../types/r-types';
 
 type TabType = 'console' | 'terminal' | 'r' | 'python';
@@ -45,6 +45,14 @@ export const Terminal = () => {
     const [pythonSessionActive, setPythonSessionActive] = useState(false);
     const [pythonSessionLoading, setPythonSessionLoading] = useState(false);
     const [pythonVersion, setPythonVersion] = useState<string>('');
+
+    const clearRHistory = () => {
+        setRHistory([]);
+    };
+
+    const clearPythonHistory = () => {
+        setPythonHistory([]);
+    };
 
     const outputRef = useRef<HTMLDivElement>(null);
 
@@ -535,6 +543,14 @@ export const Terminal = () => {
                         Run
                     </button>
                     <button
+                        onClick={clearRHistory}
+                        className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                        title="Clear Output"
+                    >
+                        <Eraser size={12} />
+                        Clear
+                    </button>
+                    <button
                         onClick={stopRSession}
                         className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors flex items-center gap-1"
                     >
@@ -590,6 +606,14 @@ export const Terminal = () => {
                         className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Run
+                    </button>
+                    <button
+                        onClick={clearPythonHistory}
+                        className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+                        title="Clear Output"
+                    >
+                        <Eraser size={12} />
+                        Clear
                     </button>
                     <button
                         onClick={stopPythonSession}

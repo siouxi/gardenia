@@ -29,7 +29,23 @@ export type NodeData = {
 export type AppNode = Node<NodeData>;
 
 const initialNodes: AppNode[] = [
-    { id: '1', position: { x: 100, y: 100 }, data: { label: 'Input', category: 'Input' }, type: 'resolve' },
+    {
+        id: '1',
+        position: { x: 100, y: 100 },
+        type: 'resolve',
+        data: {
+            label: 'START',
+            category: 'Utilities',
+            toolId: 'flow-start',
+            toolData: {
+                id: 'flow-start',
+                name: 'START',
+                category: 'Utilities',
+                inputs: [],
+                outputs: [{ name: 'start_signal', type: 'signal' }]
+            }
+        }
+    },
 ];
 const initialEdges: any[] = [];
 
