@@ -37,4 +37,8 @@ export interface ToolDefinition {
 
     // Configuration
     parameters: ToolParameter[];
+
+    // Execution
+    defaultCode?: string;
+    language?: 'python' | 'r';
 }

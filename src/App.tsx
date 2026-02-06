@@ -14,7 +14,7 @@ import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
-import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
 
 export interface NodeData {
     label: string;
@@ -174,7 +174,9 @@ const Flow = () => {
                     toolId: tool.id,
                     toolData: tool,
                     parameterValues: {},
-                    code: '# Hola Mundo'
+                    // Use default code and language from tool definition, or fallback
+                    code: tool.defaultCode || '# Hola Mundo',
+                    language: tool.language || 'python'
                 },
             };
 
@@ -449,6 +451,7 @@ const Flow = () => {
     }, [setNodes, setEdges]);
 
     const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+    const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
 
     return (
         <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#18181b] text-[#ccc] font-sans">
@@ -484,6 +487,17 @@ const Flow = () => {
                                 >
                                     <Upload className="w-3.5 h-3.5" />
                                     Export Workflow
+                                </button>
+                                <div className="h-[1px] bg-[#333] my-1" />
+                                <button
+                                    className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2"
+                                    onClick={() => {
+                                        setIsPreferencesOpen(true);
+                                        setIsFileMenuOpen(false);
+                                    }}
+                                >
+                                    <Settings className="w-3.5 h-3.5" />
+                                    Preferences
                                 </button>
                             </div>
                         </>
@@ -690,6 +704,35 @@ const Flow = () => {
                     </div>
                 )}
             </div>
+
+            {/* Preferences Modal */}
+            {isPreferencesOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+                    <div className="bg-[#1f1f23] border border-[#333] rounded-lg shadow-2xl p-6 w-[400px] max-w-full transform scale-100 transition-all">
+                        <h2 className="text-xl font-bold text-[#ccc] mb-4 flex items-center gap-2">
+                            <Settings size={20} />
+                            Preferences
+                        </h2>
+
+                        <div className="flex flex-col items-center justify-center py-8 text-[#666] bg-[#121212] rounded border border-[#2a2a2a] mb-6">
+                            <Settings size={48} className="mb-4 opacity-50 animate-spin-slow" style={{ animationDuration: '10s' }} />
+                            <p className="text-lg font-medium text-[#ccc]">Coming Soon</p>
+                            <p className="text-sm mt-2 text-center max-w-[80%]">
+                                Global application settings and configuration options will be available here.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => setIsPreferencesOpen(false)}
+                                className="px-4 py-2 bg-[#333] hover:bg-[#444] text-[#ccc] rounded text-sm transition-colors border border-[#444] hover:border-[#555]"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

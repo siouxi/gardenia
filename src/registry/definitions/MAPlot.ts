@@ -20,7 +20,30 @@ const tool: ToolDefinition = {
             label: 'Significance Level',
             default: 0.05
         }
-    ]
+    ],
+    defaultCode: `# MA Plot Generation
+# Expected inputs: 'control' and 'treatment' dataframes
+# Output: Saves plot to 'ma_plot.png'
+
+# 1. Load Data (Simulated for template if inputs missing)
+if (!exists("control")) control <- data.frame(mean=runif(100, 0, 100))
+if (!exists("treatment")) treatment <- data.frame(mean=runif(100, 0, 100))
+
+# 2. Calculate M (log ratio) and A (mean average)
+# Assuming data has 'expression' column or similar. Adjust as needed.
+# For demo: just random data
+M <- log2(treatment$mean / control$mean)
+A <- 0.5 * log2(treatment$mean * control$mean)
+
+# 3. Create Plot
+png("ma_plot.png", width=800, height=600)
+plot(A, M, main="MA Plot", pch=19, col=rgb(0,0,0,0.5), xlab="A (Log Intensity)", ylab="M (Log Ratio)")
+abline(h=0, col="red", lwd=2)
+dev.off()
+
+print("MA Plot generated successfully")
+`,
+    language: 'r'
 };
 
 export default tool;
