@@ -28,7 +28,7 @@ declare global {
     }
 }
 
-export const Terminal = ({ onAddTestNode, onLogToConsole, isWorkflowRunning }: {
+export const Terminal = ({ onAddTestNode, onLogToConsole }: {
     onAddTestNode?: () => void;
     onLogToConsole?: (callback: (log: string) => void) => void;
     isWorkflowRunning?: boolean;
@@ -411,13 +411,10 @@ export const Terminal = ({ onAddTestNode, onLogToConsole, isWorkflowRunning }: {
                             </div>
                         </button>
                         <button
-                            onClick={() => !isWorkflowRunning && setActiveTab('r')}
-                            disabled={isWorkflowRunning}
-                            className={`px-3 py-1 text-xs rounded transition-colors ${isWorkflowRunning
-                                    ? 'bg-transparent text-slate-600 cursor-not-allowed'
-                                    : activeTab === 'r'
-                                        ? 'bg-[#2a2a2a] text-blue-400 border border-slate-600'
-                                        : 'bg-transparent text-slate-400 hover:text-slate-300'
+                            onClick={() => setActiveTab('r')}
+                            className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'r'
+                                ? 'bg-[#2a2a2a] text-blue-400 border border-slate-600'
+                                : 'bg-transparent text-slate-400 hover:text-slate-300'
                                 }`}
                         >
                             <div className="flex items-center gap-1.5">
@@ -426,13 +423,10 @@ export const Terminal = ({ onAddTestNode, onLogToConsole, isWorkflowRunning }: {
                             </div>
                         </button>
                         <button
-                            onClick={() => !isWorkflowRunning && setActiveTab('python')}
-                            disabled={isWorkflowRunning}
-                            className={`px-3 py-1 text-xs rounded transition-colors ${isWorkflowRunning
-                                    ? 'bg-transparent text-slate-600 cursor-not-allowed'
-                                    : activeTab === 'python'
-                                        ? 'bg-[#2a2a2a] text-yellow-400 border border-slate-600'
-                                        : 'bg-transparent text-slate-400 hover:text-slate-300'
+                            onClick={() => setActiveTab('python')}
+                            className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'python'
+                                ? 'bg-[#2a2a2a] text-yellow-400 border border-slate-600'
+                                : 'bg-transparent text-slate-400 hover:text-slate-300'
                                 }`}
                         >
                             <div className="flex items-center gap-1.5">

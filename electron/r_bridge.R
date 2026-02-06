@@ -98,12 +98,13 @@ run_code <- function(code, env) {
     tryCatch({
         # Capture all output (stdout and messages)
         output_text <- capture.output({
-            # Parse and evaluate the code
-            result <- eval(parse(text = code), envir = env)
+            # Parse and evaluate the code with visibility tracking
+            result <- withVisible(eval(parse(text = code), envir = env))
             
-            # If result is not NULL and not invisible, print it (REPL-like behavior)
-            if (!is.null(result)) {
-                print(result)
+            # Only print if the result is visible (REPL-like behavior)
+            # This prevents duplicate output for expressions
+            if (result$visible && !is.null(result$value)) {
+                print(result$value)
             }
         }, type = "output")
         

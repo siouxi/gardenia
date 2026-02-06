@@ -116,7 +116,6 @@ const Flow = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-    const [isWorkflowRunning, setIsWorkflowRunning] = useState(false);
 
     // Console logging ref
     const logToConsoleRef = useRef<((log: string) => void) | null>(null);
@@ -217,115 +216,129 @@ const Flow = () => {
     }, [setNodes]);
 
     const runWorkflow = async () => {
-        setIsWorkflowRunning(true);
         log('=== WORKFLOW EXECUTION STARTED ===');
 
-        // Validation: Check if Start Node exists and is connected
-        const startNodes = nodes.filter(n => n.data.toolId === 'flow-start');
+        try {
+            // Validation: Check if Start Node exists and is connected
+            const startNodes = nodes.filter(n => n.data.toolId === 'flow-start');
 
-        if (startNodes.length === 0) {
-            alert("Please add a START node to your workflow.");
-            return;
-        }
-
-        const hasUnconnectedStart = startNodes.some(node => {
-            return !edges.some(edge => edge.source === node.id || edge.target === node.id);
-        });
-
-        if (hasUnconnectedStart) {
-            alert("Please create a workflow.");
-            return;
-        }
-
-        // Get execution order using BFS from START node
-        const getExecutionOrder = (startNodeId: string): string[] => {
-            const visited = new Set<string>();
-            const order: string[] = [];
-            const queue: string[] = [startNodeId];
-
-            while (queue.length > 0) {
-                const nodeId = queue.shift()!;
-                if (visited.has(nodeId)) continue;
-
-                visited.add(nodeId);
-                order.push(nodeId);
-
-                // Find outgoing edges
-                const outgoing = edges.filter(e => e.source === nodeId);
-                outgoing.forEach(edge => queue.push(edge.target));
+            if (startNodes.length === 0) {
+                log("Please add a START node to your workflow.");
+                return;
             }
 
-            return order;
-        };
+            const hasUnconnectedStart = startNodes.some(node => {
+                return !edges.some(edge => edge.source === node.id || edge.target === node.id);
+            });
 
-        const startNode = startNodes[0];
-        const executionOrder = getExecutionOrder(startNode.id);
-
-        log(`[Info] Execution order: ${executionOrder.map(id => {
-            const n = nodes.find(node => node.id === id);
-            return n?.data.label || id;
-        }).join(' → ')}`);
-
-        // Execute nodes sequentially
-        for (let i = 0; i < executionOrder.length; i++) {
-            const nodeId = executionOrder[i];
-            const node = nodes.find(n => n.id === nodeId);
-            if (!node) {
-                log(`[Error] Node ${nodeId} not found!`);
-                continue;
+            if (hasUnconnectedStart) {
+                log("Please create a workflow.");
+                return;
             }
 
-            const toolId = node.data.toolId;
+            // Get execution order using BFS from START node
+            const getExecutionOrder = (startNodeId: string): string[] => {
+                const visited = new Set<string>();
+                const order: string[] = [];
+                const queue: string[] = [startNodeId];
 
-            // Skip START node (just triggers)
-            if (toolId === 'flow-start') {
-                log(`[START] Workflow initiated`);
-                continue;
-            }
+                while (queue.length > 0) {
+                    const nodeId = queue.shift()!;
+                    if (visited.has(nodeId)) continue;
 
-            // Handle END node
-            if (toolId === 'flow-end') {
-                log(`[END] Workflow completed successfully ✅`);
-                alert('✅ Workflow completed successfully!');
-                break;
-            }
+                    visited.add(nodeId);
+                    order.push(nodeId);
 
-            // Execute code for TEST and other nodes
-            const code = node.data.code || '# No code defined';
-            const language = node.data.language || 'python';
-
-            log(`[${node.data.label}] Executing ${language} code...`);
-
-            // Update node state to 'running'
-            setNodes((nds) =>
-                nds.map((n) =>
-                    n.id === nodeId
-                        ? { ...n, data: { ...n.data, executionState: 'running' } }
-                        : n
-                )
-            );
-
-            try {
-                let result;
-                if (language === 'python') {
-                    result = await (window as any).electronAPI.executePythonCommand(code);
-                } else {
-                    result = await (window as any).electronAPI.executeRCommand(code);
+                    // Find outgoing edges
+                    const outgoing = edges.filter(e => e.source === nodeId);
+                    outgoing.forEach(edge => queue.push(edge.target));
                 }
 
-                if (result.status === 'success') {
-                    log(`[${node.data.label}] ✅ Output: ${result.output}`);
+                return order;
+            };
 
-                    // Update node state to 'success'
-                    setNodes((nds) =>
-                        nds.map((n) =>
-                            n.id === nodeId
-                                ? { ...n, data: { ...n.data, executionState: 'success' } }
-                                : n
-                        )
-                    );
-                } else {
-                    log(`[${node.data.label}] ❌ Error: ${result.error || result.output}`);
+            const startNode = startNodes[0];
+            const executionOrder = getExecutionOrder(startNode.id);
+
+            log(`[Info] Execution order: ${executionOrder.map(id => {
+                const n = nodes.find(node => node.id === id);
+                return n?.data.label || id;
+            }).join(' → ')}`);
+
+            // Execute nodes sequentially
+            for (let i = 0; i < executionOrder.length; i++) {
+                const nodeId = executionOrder[i];
+                const node = nodes.find(n => n.id === nodeId);
+                if (!node) {
+                    log(`[Error] Node ${nodeId} not found!`);
+                    continue;
+                }
+
+                const toolId = node.data.toolId;
+
+                // Skip START node (just triggers)
+                if (toolId === 'flow-start') {
+                    log(`[START] Workflow initiated`);
+                    continue;
+                }
+
+                // Handle END node
+                if (toolId === 'flow-end') {
+                    log(`[END] Workflow completed successfully ✅`);
+                    break;
+                }
+
+                // Execute code for TEST and other nodes
+                const code = node.data.code || '# No code defined';
+                const language = node.data.language || 'python';
+
+                log(`[${node.data.label}] Executing ${language} code...`);
+
+                // Update node state to 'running'
+                setNodes((nds) =>
+                    nds.map((n) =>
+                        n.id === nodeId
+                            ? { ...n, data: { ...n.data, executionState: 'running' } }
+                            : n
+                    )
+                );
+
+                try {
+                    let result;
+                    if (language === 'python') {
+                        result = await (window as any).electronAPI.executePythonCommand(code);
+                    } else {
+                        result = await (window as any).electronAPI.executeRCommand(code);
+                    }
+
+                    if (result.status === 'success') {
+                        log(`[${node.data.label}] ✅ Output: ${result.output}`);
+
+                        // Update node state to 'success'
+                        setNodes((nds) =>
+                            nds.map((n) =>
+                                n.id === nodeId
+                                    ? { ...n, data: { ...n.data, executionState: 'success' } }
+                                    : n
+                            )
+                        );
+                    } else {
+                        log(`[${node.data.label}] ❌ Error: ${result.error || result.output}`);
+
+                        // Update node state to 'error'
+                        setNodes((nds) =>
+                            nds.map((n) =>
+                                n.id === nodeId
+                                    ? { ...n, data: { ...n.data, executionState: 'error' } }
+                                    : n
+                            )
+                        );
+
+                        log(`[${node.data.label}] ❌ Error: ${result.error || result.output}`); // Changed alert to log
+                        return; // Stop execution on error
+                    }
+                } catch (error) {
+                    log(`[${node.data.label}] ❌ Exception: ${error}`);
 
                     // Update node state to 'error'
                     setNodes((nds) =>
@@ -336,41 +349,28 @@ const Flow = () => {
                         )
                     );
 
-                    alert(`Execution failed at node "${node.data.label}":\n${result.error || result.output}`);
-                    return; // Stop execution on error
+                    log(`[${node.data.label}] ❌ Exception: ${error}`); // Changed alert to log
+                    return;
                 }
-            } catch (error) {
-                log(`[${node.data.label}] ❌ Exception: ${error}`);
 
-                // Update node state to 'error'
-                setNodes((nds) =>
-                    nds.map((n) =>
-                        n.id === nodeId
-                            ? { ...n, data: { ...n.data, executionState: 'error' } }
-                            : n
-                    )
-                );
-
-                alert(`Execution failed at node "${node.data.label}":\n${error}`);
-                return;
+                // Small delay between nodes to prevent session blocking
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
-            // Small delay between nodes to prevent session blocking
-            await new Promise(resolve => setTimeout(resolve, 100));
+            log('=== WORKFLOW EXECUTION COMPLETED ===');
+
+            // Reset all node execution states after a short delay
+            setTimeout(() => {
+                setNodes((nds) =>
+                    nds.map((n) => ({
+                        ...n,
+                        data: { ...n.data, executionState: undefined }
+                    }))
+                );
+            }, 2000); // 2 second delay to show final states
+        } finally {
+            // Cleanup if needed
         }
-
-        log('=== WORKFLOW EXECUTION COMPLETED ===');
-
-        // Reset all node execution states after a short delay
-        setTimeout(() => {
-            setNodes((nds) =>
-                nds.map((n) => ({
-                    ...n,
-                    data: { ...n.data, executionState: undefined }
-                }))
-            );
-            setIsWorkflowRunning(false); // Re-enable R/Python tabs
-        }, 2000); // 2 second delay to show final states
     };
     const onExport = useCallback(() => {
         const workflowData = {
@@ -560,7 +560,6 @@ const Flow = () => {
 
                     {/* Bottom Time/Log Panel */}
                     <Terminal
-                        isWorkflowRunning={isWorkflowRunning}
                         onLogToConsole={(callback) => {
                             logToConsoleRef.current = callback;
                         }}

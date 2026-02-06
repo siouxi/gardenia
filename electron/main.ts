@@ -126,8 +126,32 @@ class RSessionManager {
 
             // Send command as JSON
             try {
+                let completed = false;
                 const payload = JSON.stringify({ command });
                 this.rProcess.stdin!.write(payload + '\n');
+
+                // Timeout safety
+                setTimeout(() => {
+                    if (!completed) {
+                        completed = true;
+                        cleanup();
+                        resolve({
+                            status: 'error',
+                            output: '',
+                            error: 'Command execution timed out (30s)'
+                        });
+                    }
+                }, 30000);
+
+                // Wrap original resolve to set completed flag
+                const originalResolve = resolve;
+                resolve = (value) => {
+                    if (!completed) {
+                        completed = true;
+                        originalResolve(value);
+                    }
+                };
+
             } catch (e) {
                 cleanup();
                 reject(e);
@@ -457,8 +481,32 @@ class PythonSessionManager {
 
             // Send command as JSON
             try {
+                let completed = false;
                 const payload = JSON.stringify({ command });
                 this.pythonProcess.stdin!.write(payload + '\n');
+
+                // Timeout safety
+                setTimeout(() => {
+                    if (!completed) {
+                        completed = true;
+                        cleanup();
+                        resolve({
+                            status: 'error',
+                            output: '',
+                            error: 'Command execution timed out (30s)'
+                        });
+                    }
+                }, 30000);
+
+                // Wrap original resolve to set completed flag
+                const originalResolve = resolve;
+                resolve = (value) => {
+                    if (!completed) {
+                        completed = true;
+                        originalResolve(value);
+                    }
+                };
+
             } catch (e) {
                 cleanup();
                 reject(e);
