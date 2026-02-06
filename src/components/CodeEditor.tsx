@@ -17,6 +17,12 @@ export const CodeEditor = ({ node, onUpdate }: CodeEditorProps) => {
         );
     }
 
+    const currentLanguage = node.data.language || 'python';
+
+    const handleLanguageToggle = (lang: 'python' | 'r') => {
+        onUpdate(node.id, { ...node.data, language: lang });
+    };
+
     return (
         <div className="flex flex-col h-full bg-[#1e1e1e] border-l border-[#000]">
             <div className="h-9 flex shrink-0 items-center px-4 justify-between border-b border-[#121212] bg-[#1f1f23]">
@@ -29,8 +35,27 @@ export const CodeEditor = ({ node, onUpdate }: CodeEditorProps) => {
                         {node.id}
                     </span>
                 </div>
-                <div className="text-[10px] text-[#666]">
-                    Python Script
+
+                {/* Language Toggle Switch */}
+                <div className="flex items-center gap-1 bg-[#121212] rounded-[2px] p-0.5 border border-[#333]">
+                    <button
+                        onClick={() => handleLanguageToggle('python')}
+                        className={`px-3 py-1 text-[10px] font-bold rounded-[2px] transition-all ${currentLanguage === 'python'
+                                ? 'bg-[#34d399] text-[#000]'
+                                : 'text-[#666] hover:text-[#999]'
+                            }`}
+                    >
+                        PYTHON
+                    </button>
+                    <button
+                        onClick={() => handleLanguageToggle('r')}
+                        className={`px-3 py-1 text-[10px] font-bold rounded-[2px] transition-all ${currentLanguage === 'r'
+                                ? 'bg-[#34d399] text-[#000]'
+                                : 'text-[#666] hover:text-[#999]'
+                            }`}
+                    >
+                        R
+                    </button>
                 </div>
             </div>
             <div className="flex-1 relative bg-[#121212]">
@@ -39,7 +64,7 @@ export const CodeEditor = ({ node, onUpdate }: CodeEditorProps) => {
                     spellCheck={false}
                     value={node.data.code || ''}
                     onChange={(e) => onUpdate(node.id, { ...node.data, code: e.target.value })}
-                    placeholder="# Start typing your Python code here..."
+                    placeholder={`# Start typing your ${currentLanguage === 'python' ? 'Python' : 'R'} code here...`}
                 />
             </div>
         </div>

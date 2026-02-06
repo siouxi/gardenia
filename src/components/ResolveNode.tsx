@@ -34,10 +34,23 @@ export const ResolveNode = ({ data, selected }: NodeProps) => {
     const showDefaultInput = (!toolData?.inputs) && data.type !== 'input';
     const showDefaultOutput = (!toolData?.outputs);
 
+    // Determine border color based on execution state
+    const getExecutionStateStyle = () => {
+        switch (data.executionState) {
+            case 'running':
+                return 'border-yellow-500 shadow-lg shadow-yellow-500/50 animate-pulse';
+            case 'success':
+                return 'border-green-500 shadow-lg shadow-green-500/30';
+            case 'error':
+                return 'border-red-500 shadow-lg shadow-red-500/30';
+            default:
+                return 'border-[#2a2a2a]';
+        }
+    };
+
     return (
         <div className={`
-            relative min-w-[140px] bg-[#1e1e1e] rounded-[6px] shadow-xl 
-            border border-[#2a2a2a] overflow-visible group transition-all
+            group relative bg-[#18181b] rounded-[5px] border-5 ${getExecutionStateStyle()} transition-all duration-300 min-w-[180px] hover:border-[#34d399] hover:shadow-lg hover:shadow-[#34d399]/20
             ${selected ? 'ring-1 ring-[#34d399] border-[#34d399]' : 'hover:border-[#404040]'}
         `}>
             {/* Header */}

@@ -93,6 +93,7 @@ class RSessionManager {
                 return;
             }
 
+            // Clear buffers before executing new command
             this.outputBuffer = '';
             this.errorBuffer = '';
 

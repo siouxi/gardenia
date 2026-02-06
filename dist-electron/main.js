@@ -92,6 +92,7 @@ class RSessionManager {
                 resolve({ status: 'error', output: '', error: 'R session not started' });
                 return;
             }
+            // Clear buffers before executing new command
             this.outputBuffer = '';
             this.errorBuffer = '';
             const onStdout = (data) => {

@@ -28,7 +28,11 @@ declare global {
     }
 }
 
-export const Terminal = ({ onAddTestNode }: { onAddTestNode?: () => void }) => {
+export const Terminal = ({ onAddTestNode, onLogToConsole, isWorkflowRunning }: {
+    onAddTestNode?: () => void;
+    onLogToConsole?: (callback: (log: string) => void) => void;
+    isWorkflowRunning?: boolean;
+}) => {
     const [isOpen, setIsOpen] = useState(true);
     const [activeTab, setActiveTab] = useState<TabType>('console');
     const [rInput, setRInput] = useState('');
@@ -59,6 +63,15 @@ export const Terminal = ({ onAddTestNode }: { onAddTestNode?: () => void }) => {
     const [consoleLogs, setConsoleLogs] = useState<string[]>([
         "[System] Gardenia Engine Ready..."
     ]);
+
+    // Expose console logging to parent component
+    useEffect(() => {
+        if (onLogToConsole) {
+            onLogToConsole((log: string) => {
+                setConsoleLogs(prev => [...prev, log]);
+            });
+        }
+    }, [onLogToConsole]);
 
     // Auto-start R and Python sessions on mount
     useEffect(() => {
@@ -398,10 +411,13 @@ export const Terminal = ({ onAddTestNode }: { onAddTestNode?: () => void }) => {
                             </div>
                         </button>
                         <button
-                            onClick={() => setActiveTab('r')}
-                            className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'r'
-                                ? 'bg-[#2a2a2a] text-blue-400 border border-slate-600'
-                                : 'bg-transparent text-slate-400 hover:text-slate-300'
+                            onClick={() => !isWorkflowRunning && setActiveTab('r')}
+                            disabled={isWorkflowRunning}
+                            className={`px-3 py-1 text-xs rounded transition-colors ${isWorkflowRunning
+                                    ? 'bg-transparent text-slate-600 cursor-not-allowed'
+                                    : activeTab === 'r'
+                                        ? 'bg-[#2a2a2a] text-blue-400 border border-slate-600'
+                                        : 'bg-transparent text-slate-400 hover:text-slate-300'
                                 }`}
                         >
                             <div className="flex items-center gap-1.5">
@@ -410,10 +426,13 @@ export const Terminal = ({ onAddTestNode }: { onAddTestNode?: () => void }) => {
                             </div>
                         </button>
                         <button
-                            onClick={() => setActiveTab('python')}
-                            className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'python'
-                                ? 'bg-[#2a2a2a] text-yellow-400 border border-slate-600'
-                                : 'bg-transparent text-slate-400 hover:text-slate-300'
+                            onClick={() => !isWorkflowRunning && setActiveTab('python')}
+                            disabled={isWorkflowRunning}
+                            className={`px-3 py-1 text-xs rounded transition-colors ${isWorkflowRunning
+                                    ? 'bg-transparent text-slate-600 cursor-not-allowed'
+                                    : activeTab === 'python'
+                                        ? 'bg-[#2a2a2a] text-yellow-400 border border-slate-600'
+                                        : 'bg-transparent text-slate-400 hover:text-slate-300'
                                 }`}
                         >
                             <div className="flex items-center gap-1.5">

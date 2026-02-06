@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -15,16 +15,17 @@ import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
 import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
-// Define the custom node type for our app
-export type NodeData = {
+export interface NodeData {
     label: string;
     category?: string;
     toolId?: string;
     toolData?: any;
     parameterValues?: Record<string, any>;
-    code?: string;
-    [key: string]: any;
-};
+    code?: string; // Python/R code for execution
+    language?: 'python' | 'r'; // Execution language
+    executionState?: 'pending' | 'running' | 'success' | 'error'; // Visual feedback
+    [key: string]: any; // Index signature for ReactFlow compatibility
+}
 
 export type AppNode = Node<NodeData>;
 
@@ -115,6 +116,17 @@ const Flow = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+    const [isWorkflowRunning, setIsWorkflowRunning] = useState(false);
+
+    // Console logging ref
+    const logToConsoleRef = useRef<((log: string) => void) | null>(null);
+
+    const log = (message: string) => {
+        console.log(message);
+        if (logToConsoleRef.current) {
+            logToConsoleRef.current(message);
+        }
+    };
 
     const nodeTypes = useMemo<NodeTypes>(() => ({
         resolve: ResolveNode,
@@ -204,9 +216,18 @@ const Flow = () => {
         );
     }, [setNodes]);
 
-    const runWorkflow = () => {
-        // Validation: Check if Start Node is connected
+    const runWorkflow = async () => {
+        setIsWorkflowRunning(true);
+        log('=== WORKFLOW EXECUTION STARTED ===');
+
+        // Validation: Check if Start Node exists and is connected
         const startNodes = nodes.filter(n => n.data.toolId === 'flow-start');
+
+        if (startNodes.length === 0) {
+            alert("Please add a START node to your workflow.");
+            return;
+        }
+
         const hasUnconnectedStart = startNodes.some(node => {
             return !edges.some(edge => edge.source === node.id || edge.target === node.id);
         });
@@ -216,11 +237,141 @@ const Flow = () => {
             return;
         }
 
-        (window as any).electronAPI?.runWorkflow({ nodes, edges })
-            .then((res: any) => console.log(res))
-            .catch((err: any) => console.error(err));
-    };
+        // Get execution order using BFS from START node
+        const getExecutionOrder = (startNodeId: string): string[] => {
+            const visited = new Set<string>();
+            const order: string[] = [];
+            const queue: string[] = [startNodeId];
 
+            while (queue.length > 0) {
+                const nodeId = queue.shift()!;
+                if (visited.has(nodeId)) continue;
+
+                visited.add(nodeId);
+                order.push(nodeId);
+
+                // Find outgoing edges
+                const outgoing = edges.filter(e => e.source === nodeId);
+                outgoing.forEach(edge => queue.push(edge.target));
+            }
+
+            return order;
+        };
+
+        const startNode = startNodes[0];
+        const executionOrder = getExecutionOrder(startNode.id);
+
+        log(`[Info] Execution order: ${executionOrder.map(id => {
+            const n = nodes.find(node => node.id === id);
+            return n?.data.label || id;
+        }).join(' → ')}`);
+
+        // Execute nodes sequentially
+        for (let i = 0; i < executionOrder.length; i++) {
+            const nodeId = executionOrder[i];
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node) {
+                log(`[Error] Node ${nodeId} not found!`);
+                continue;
+            }
+
+            const toolId = node.data.toolId;
+
+            // Skip START node (just triggers)
+            if (toolId === 'flow-start') {
+                log(`[START] Workflow initiated`);
+                continue;
+            }
+
+            // Handle END node
+            if (toolId === 'flow-end') {
+                log(`[END] Workflow completed successfully ✅`);
+                alert('✅ Workflow completed successfully!');
+                break;
+            }
+
+            // Execute code for TEST and other nodes
+            const code = node.data.code || '# No code defined';
+            const language = node.data.language || 'python';
+
+            log(`[${node.data.label}] Executing ${language} code...`);
+
+            // Update node state to 'running'
+            setNodes((nds) =>
+                nds.map((n) =>
+                    n.id === nodeId
+                        ? { ...n, data: { ...n.data, executionState: 'running' } }
+                        : n
+                )
+            );
+
+            try {
+                let result;
+                if (language === 'python') {
+                    result = await (window as any).electronAPI.executePythonCommand(code);
+                } else {
+                    result = await (window as any).electronAPI.executeRCommand(code);
+                }
+
+                if (result.status === 'success') {
+                    log(`[${node.data.label}] ✅ Output: ${result.output}`);
+
+                    // Update node state to 'success'
+                    setNodes((nds) =>
+                        nds.map((n) =>
+                            n.id === nodeId
+                                ? { ...n, data: { ...n.data, executionState: 'success' } }
+                                : n
+                        )
+                    );
+                } else {
+                    log(`[${node.data.label}] ❌ Error: ${result.error || result.output}`);
+
+                    // Update node state to 'error'
+                    setNodes((nds) =>
+                        nds.map((n) =>
+                            n.id === nodeId
+                                ? { ...n, data: { ...n.data, executionState: 'error' } }
+                                : n
+                        )
+                    );
+
+                    alert(`Execution failed at node "${node.data.label}":\n${result.error || result.output}`);
+                    return; // Stop execution on error
+                }
+            } catch (error) {
+                log(`[${node.data.label}] ❌ Exception: ${error}`);
+
+                // Update node state to 'error'
+                setNodes((nds) =>
+                    nds.map((n) =>
+                        n.id === nodeId
+                            ? { ...n, data: { ...n.data, executionState: 'error' } }
+                            : n
+                    )
+                );
+
+                alert(`Execution failed at node "${node.data.label}":\n${error}`);
+                return;
+            }
+
+            // Small delay between nodes to prevent session blocking
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        log('=== WORKFLOW EXECUTION COMPLETED ===');
+
+        // Reset all node execution states after a short delay
+        setTimeout(() => {
+            setNodes((nds) =>
+                nds.map((n) => ({
+                    ...n,
+                    data: { ...n.data, executionState: undefined }
+                }))
+            );
+            setIsWorkflowRunning(false); // Re-enable R/Python tabs
+        }, 2000); // 2 second delay to show final states
+    };
     const onExport = useCallback(() => {
         const workflowData = {
             nodes,
@@ -408,28 +559,35 @@ const Flow = () => {
 
 
                     {/* Bottom Time/Log Panel */}
-                    <Terminal onAddTestNode={() => {
-                        const id = `test-${Date.now()}`;
-                        const newNode: AppNode = {
-                            id,
-                            type: 'resolve',
-                            position: { x: 300, y: 300 },
-                            data: {
-                                label: 'TEST',
-                                category: 'Utilities',
-                                toolId: 'flow-test',
-                                toolData: {
-                                    id: 'flow-test',
-                                    name: 'TEST',
+                    <Terminal
+                        isWorkflowRunning={isWorkflowRunning}
+                        onLogToConsole={(callback) => {
+                            logToConsoleRef.current = callback;
+                        }}
+                        onAddTestNode={() => {
+                            const id = `test-${Date.now()}`;
+                            const newNode: AppNode = {
+                                id,
+                                type: 'resolve',
+                                position: { x: 300, y: 300 },
+                                data: {
+                                    label: 'TEST',
                                     category: 'Utilities',
-                                    hidden: true,
-                                    inputs: [{ name: 'input', type: 'any' }],
-                                    outputs: [{ name: 'output', type: 'any' }]
+                                    toolId: 'flow-test',
+                                    code: 'print("Hello from TEST node")',
+                                    language: 'python',
+                                    toolData: {
+                                        id: 'flow-test',
+                                        name: 'TEST',
+                                        category: 'Utilities',
+                                        hidden: true,
+                                        inputs: [{ name: 'input', type: 'any' }],
+                                        outputs: [{ name: 'output', type: 'any' }]
+                                    }
                                 }
-                            }
-                        };
-                        setNodes((nds) => nds.concat(newNode));
-                    }} />
+                            };
+                            setNodes((nds) => nds.concat(newNode));
+                        }} />
                 </div>
 
                 {/* Right Panel: Inspector */}
