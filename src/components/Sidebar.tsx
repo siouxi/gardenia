@@ -49,6 +49,7 @@ export const Sidebar = () => {
         return categories.map(catName => {
             const toolsInCat = allTools.filter(t =>
                 t.category === catName &&
+                !t.hidden && // Exclude hidden tools
                 t.name.toLowerCase().includes(lowerSearch)
             );
 

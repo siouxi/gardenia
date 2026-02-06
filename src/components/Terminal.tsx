@@ -28,7 +28,7 @@ declare global {
     }
 }
 
-export const Terminal = () => {
+export const Terminal = ({ onAddTestNode }: { onAddTestNode?: () => void }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [activeTab, setActiveTab] = useState<TabType>('console');
     const [rInput, setRInput] = useState('');
@@ -224,6 +224,18 @@ export const Terminal = () => {
 
         const command = shellInput.trim();
         setShellInput('');
+
+        // Hidden Test Node Trigger
+        if (command === 'adatest') {
+            onAddTestNode?.();
+            setShellHistory(prev => [...prev, {
+                command: `$ ${command}`,
+                output: 'Test node added to canvas.',
+                status: 'success',
+                timestamp: new Date()
+            }]);
+            return;
+        }
 
         // Add command to history immediately
         setShellHistory(prev => [...prev, {

@@ -159,6 +159,7 @@ function createWindow() {
         },
         // Emerald theme dark background color to avoid white flash
         backgroundColor: '#020617',
+        autoHideMenuBar: true,
     });
 
     if (isDev) {

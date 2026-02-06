@@ -408,7 +408,28 @@ const Flow = () => {
 
 
                     {/* Bottom Time/Log Panel */}
-                    <Terminal />
+                    <Terminal onAddTestNode={() => {
+                        const id = `test-${Date.now()}`;
+                        const newNode: AppNode = {
+                            id,
+                            type: 'resolve',
+                            position: { x: 300, y: 300 },
+                            data: {
+                                label: 'TEST',
+                                category: 'Utilities',
+                                toolId: 'flow-test',
+                                toolData: {
+                                    id: 'flow-test',
+                                    name: 'TEST',
+                                    category: 'Utilities',
+                                    hidden: true,
+                                    inputs: [{ name: 'input', type: 'any' }],
+                                    outputs: [{ name: 'output', type: 'any' }]
+                                }
+                            }
+                        };
+                        setNodes((nds) => nds.concat(newNode));
+                    }} />
                 </div>
 
                 {/* Right Panel: Inspector */}

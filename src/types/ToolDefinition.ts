@@ -28,6 +28,7 @@ export interface ToolDefinition {
     description: string;
     category: ToolCategory;
     version: string;
+    hidden?: boolean; // If true, not shown in sidebar
     author?: string;
 
     // Connectivity
