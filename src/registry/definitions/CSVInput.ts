@@ -6,7 +6,9 @@ const tool: ToolDefinition = {
     description: 'Load a CSV file from the local file system',
     category: 'Input',
     version: '1.0.0',
-    inputs: [],
+    inputs: [
+        { name: 'trigger', type: 'signal', description: 'Trigger to execute this node' }
+    ],
     outputs: [
         { name: 'data', type: 'dataset', description: 'Loaded data' }
     ],
