@@ -34,57 +34,88 @@ const DataCard = ({ dataset, onClick }: DataCardProps) => {
             onClick={onClick}
         >
             {/* Preview Area */}
-            <div className="h-32 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] flex items-center justify-center relative overflow-hidden">
+            <div className="h-32 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] flex items-center justify-center relative overflow-hidden group-hover:scale-[1.02] transition-transform duration-300">
                 <div className="absolute inset-0 opacity-10 bg-[linear-gradient(45deg,#333_25%,transparent_25%,transparent_75%,#333_75%,#333),linear-gradient(45deg,#333_25%,transparent_25%,transparent_75%,#333_75%,#333)] bg-[length:16px_16px] bg-[position:0_0,8px_8px]" />
 
                 {/* Table Preview Grid */}
-                <div className="relative z-10 w-3/4 bg-[#18181b] rounded-md p-2 shadow-md">
-                    <div className="flex gap-1 mb-1">
-                        {dataset.columns.slice(0, 4).map((col, i) => (
-                            <div key={i} className="flex-1 h-3 bg-[#d97706]/30 rounded-[2px] text-[6px] text-[#d97706] flex items-center justify-center truncate px-0.5">
-                                {col.name.slice(0, 6)}
+                <div className="relative z-10 w-[85%] bg-[#18181b] rounded-md p-2 shadow-xl border border-[#333] overflow-hidden">
+                    {dataset.preview && dataset.preview.length > 0 ? (
+                        <div className="flex flex-col gap-0.5 w-full">
+                            {/* Header */}
+                            <div className="flex gap-1 mb-1 border-b border-[#333] pb-1">
+                                {dataset.columns.slice(0, 4).map((col, i) => (
+                                    <div key={i} className="flex-1 text-[6px] text-[#d97706] truncate font-medium text-center bg-[#2a2a2a]/50 rounded-[1px] px-0.5">
+                                        {col.name}
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                        {dataset.columns.length > 4 && (
-                            <div className="w-6 h-3 bg-[#333] rounded-[2px] text-[6px] text-[#666] flex items-center justify-center">
-                                +{dataset.columns.length - 4}
-                            </div>
-                        )}
-                    </div>
-                    {[0, 1, 2].map(row => (
-                        <div key={row} className="flex gap-1 mb-0.5">
-                            {dataset.columns.slice(0, 4).map((_, i) => (
-                                <div key={i} className="flex-1 h-2 bg-[#2a2a2a] rounded-[1px]" />
+                            {/* Rows */}
+                            {dataset.preview.slice(0, 5).map((row, r) => (
+                                <div key={r} className="flex gap-1 items-center">
+                                    {dataset.columns.slice(0, 4).map((col, c) => (
+                                        <div key={c} className="flex-1 text-[5px] text-[#888] truncate h-2 bg-[#222] rounded-[1px] px-0.5 flex items-center">
+                                            {String(row[col.name] ?? '')}
+                                        </div>
+                                    ))}
+                                </div>
                             ))}
-                            {dataset.columns.length > 4 && <div className="w-6" />}
                         </div>
-                    ))}
+                    ) : (
+                        // Fallback Skeleton
+                        <div className="w-full">
+                            <div className="flex gap-1 mb-1">
+                                {dataset.columns.slice(0, 4).map((col, i) => (
+                                    <div key={i} className="flex-1 h-3 bg-[#d97706]/20 rounded-[2px] text-[6px] text-[#d97706] flex items-center justify-center truncate px-0.5">
+                                        {col.name.slice(0, 6)}
+                                    </div>
+                                ))}
+                                {dataset.columns.length > 4 && (
+                                    <div className="w-6 h-3 bg-[#333] rounded-[2px] text-[6px] text-[#666] flex items-center justify-center">
+                                        +{dataset.columns.length - 4}
+                                    </div>
+                                )}
+                            </div>
+                            {[0, 1, 2].map(row => (
+                                <div key={row} className="flex gap-1 mb-0.5">
+                                    {dataset.columns.slice(0, 4).map((_, i) => (
+                                        <div key={i} className="flex-1 h-2 bg-[#2a2a2a] rounded-[1px]" />
+                                    ))}
+                                    {dataset.columns.length > 4 && <div className="w-6" />}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Icon Badge */}
-                <div className="absolute top-2 right-2 w-8 h-8 bg-[#d97706] rounded-lg flex items-center justify-center shadow-lg">
-                    <Table className="w-4 h-4 text-black" />
+                <div className="absolute top-2 right-2 w-7 h-7 bg-[#d97706] rounded-md flex items-center justify-center shadow-lg opacity-80 group-hover:opacity-100 transition-opacity">
+                    <Table className="w-3.5 h-3.5 text-black" />
                 </div>
             </div>
 
             {/* Content */}
-            <div className="p-3">
-                <h3 className="font-semibold text-sm text-white truncate group-hover:text-[#d97706] transition-colors">
-                    {dataset.name}
-                </h3>
+            <div className="p-3 border-t border-[#2a2a2a]">
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm text-gray-200 truncate group-hover:text-[#d97706] transition-colors max-w-[70%]">
+                        {dataset.name}
+                    </h3>
+                    <span className="text-[10px] text-[#666] bg-[#252525] px-1.5 py-0.5 rounded">
+                        {dataset.path.split('.').pop()?.toUpperCase()}
+                    </span>
+                </div>
 
-                <div className="mt-2 flex flex-wrap gap-2">
-                    <div className="flex items-center gap-1 text-[10px] text-[#888] bg-[#2a2a2a] px-2 py-0.5 rounded-full">
-                        <BarChart3 className="w-3 h-3" />
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="flex items-center gap-1.5 text-[10px] text-[#999] bg-[#252525] px-2 py-1 rounded">
+                        <BarChart3 className="w-3 h-3 text-[#d97706]" />
                         {dataset.num_rows.toLocaleString()} rows
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-[#888] bg-[#2a2a2a] px-2 py-0.5 rounded-full">
-                        <Database className="w-3 h-3" />
+                    <div className="flex items-center gap-1.5 text-[10px] text-[#999] bg-[#252525] px-2 py-1 rounded">
+                        <Database className="w-3 h-3 text-[#d97706]" />
                         {dataset.num_columns} cols
                     </div>
                 </div>
 
-                <div className="mt-2 flex items-center justify-between text-[9px] text-[#555]">
+                <div className="flex items-center justify-between text-[9px] text-[#555] border-t border-[#2a2a2a] pt-2 mt-2">
                     <div className="flex items-center gap-1">
                         <HardDrive className="w-3 h-3" />
                         {formatSize(dataset.size_bytes)}
@@ -115,27 +146,38 @@ const EmptyState = () => (
 export const DataView = () => {
     const datasets = useWorkflowStore((state) => state.datasets);
 
+    // Debug logging
+    console.log('DataView datasets:', datasets);
+
     if (datasets.length === 0) {
         return <EmptyState />;
     }
 
     return (
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-4 bg-[#121212]">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-[#888]">
-                    DATASETS <span className="text-[#555] font-normal">({datasets.length})</span>
-                </h2>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h2 className="text-lg font-bold text-[#e5e5e5] tracking-tight">
+                        My Datasets
+                    </h2>
+                    <p className="text-xs text-[#666] mt-0.5">
+                        {datasets.length} datasets available
+                    </p>
+                </div>
+
+                <div className="flex gap-2">
+                    {/* Filter/Sort controls could go here */}
+                </div>
             </div>
 
             {/* Pinterest Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-8">
                 {datasets.map((dataset, index) => (
                     <DataCard
                         key={dataset.path || index}
                         dataset={dataset}
                         onClick={() => {
-                            // TODO: Open dataset detail view
                             console.log('Open dataset:', dataset.name);
                         }}
                     />

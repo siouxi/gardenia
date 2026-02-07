@@ -47,6 +47,7 @@ class DatasetMetadata:
     size_bytes: int
     created_at: str
     source_node_id: Optional[str] = None
+    preview: Optional[List[Dict[str, Any]]] = None  # Small sample of data (e.g. 5 rows)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -58,6 +59,7 @@ class DatasetMetadata:
             "size_bytes": self.size_bytes,
             "created_at": self.created_at,
             "source_node_id": self.source_node_id,
+            "preview": self.preview,
         }
 
 
@@ -144,6 +146,20 @@ class ArrowStorage:
         # Get stats
         from datetime import datetime
         file_size = file_path.stat().st_size
+
+        # Extract preview (first 5 rows)
+        preview_data = []
+        try:
+            # First 5 rows
+            preview_table = table.slice(0, 5)
+            # Limit columns to first 10 to avoid huge JSON if wide dataset
+            if len(preview_table.column_names) > 10:
+                 preview_table = preview_table.select(list(range(10)))
+            
+            preview_data = preview_table.to_pylist()
+            log.info(f"Generated preview for '{name}': {len(preview_data)} rows")
+        except Exception as e:
+            log.error(f"Failed to generate preview for '{name}': {e}")
         
         metadata = DatasetMetadata(
             name=name,
@@ -157,6 +173,7 @@ class ArrowStorage:
             size_bytes=file_size,
             created_at=datetime.now().isoformat(),
             source_node_id=source_node_id,
+            preview=preview_data,
         )
         
         self._datasets[name] = metadata

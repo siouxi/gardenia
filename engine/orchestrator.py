@@ -128,6 +128,23 @@ class Orchestrator:
                 timeout=node.timeout,
                 memory_limit_mb=node.memory_limit,
             )
+
+            # Auto-save datasets to storage
+            if result.variables_created:
+                for var_name in result.variables_created:
+                    val = self.registry.get(var_name)
+                    # Check if pandas DataFrame or Arrow Table (duck typing)
+                    is_df = False
+                    if hasattr(val, 'to_parquet'): is_df = True
+                    if hasattr(val, 'schema') and hasattr(val, 'num_rows'): is_df = True
+                    
+                    if is_df:
+                        try:
+                            self.storage.write(var_name, val, source_node_id=node.id)
+                            log.info(f"Auto-saved dataset '{var_name}' to storage")
+                        except Exception as e:
+                            log.warning(f"Failed to auto-save dataset '{var_name}': {e}")
+
             return result.to_dict()
         
         try:

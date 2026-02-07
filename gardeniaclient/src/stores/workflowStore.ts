@@ -49,6 +49,7 @@ export interface Dataset {
     size_bytes: number;
     created_at: string;
     source_node_id?: string;
+    preview?: any[]; // Array of row objects for preview
 }
 
 interface WorkflowStore {

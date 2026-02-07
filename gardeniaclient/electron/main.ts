@@ -130,7 +130,7 @@ class RSessionManager {
             // Send command as JSON
             try {
                 let completed = false;
-                const payload = JSON.stringify({ command });
+                const payload = JSON.stringify({ code: command });
                 this.rProcess.stdin!.write(payload + '\n');
 
                 // Timeout safety
