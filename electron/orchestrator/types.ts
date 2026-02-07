@@ -57,10 +57,21 @@ export type ExecutionState =
     | 'cancelled'
     | 'timeout';
 
+export interface ErrorData {
+    category: string;
+    message: string;
+    language: 'python' | 'r';
+    node_id?: string;
+    line_number?: number;
+    suggestions: string[];
+    recoverable: boolean;
+}
+
 export interface ExecutionResult {
-    status: 'success' | 'error';
+    status: 'success' | 'error' | 'timeout';
     output: string;
     error?: string;
+    error_data?: ErrorData;
     variables_created?: string[];
 }
 
