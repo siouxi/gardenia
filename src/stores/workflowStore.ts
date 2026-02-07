@@ -147,7 +147,11 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
  * Initialize workflow store with orchestrator event listeners.
  * Call this once when the app starts.
  */
-export function initWorkflowEventListeners(): void {
+/**
+ * Initialize workflow store with orchestrator event listeners.
+ * Call this once when the app starts.
+ */
+export function initWorkflowEventListeners(onLog?: (message: string) => void): void {
     const api = (window as any).electronAPI;
     if (!api) {
         console.warn('electronAPI not available');
@@ -157,21 +161,27 @@ export function initWorkflowEventListeners(): void {
     // Listen for node state changes
     api.onNodeStateChange?.((data: { nodeId: string; state: string }) => {
         useWorkflowStore.getState().updateNodeState(data.nodeId, data.state as ExecutionState);
-        useWorkflowStore.getState().addLog(`[${data.nodeId}] State: ${data.state}`);
+        const msg = `[${data.nodeId}] State: ${data.state}`;
+        useWorkflowStore.getState().addLog(msg);
+        onLog?.(msg);
     });
 
     // Listen for node output
     api.onNodeOutput?.((data: { nodeId: string; output: string }) => {
         useWorkflowStore.getState().appendNodeOutput(data.nodeId, data.output);
         if (data.output.trim()) {
-            useWorkflowStore.getState().addLog(`[${data.nodeId}] ${data.output}`);
+            const msg = `[${data.nodeId}] ${data.output}`;
+            useWorkflowStore.getState().addLog(msg);
+            onLog?.(msg);
         }
     });
 
     // Listen for execution order
     api.onExecutionOrder?.((data: { order: string[]; labels: string[] }) => {
         useWorkflowStore.getState().setExecutionOrder(data.order);
-        useWorkflowStore.getState().addLog(`Execution order: ${data.labels.join(' → ')}`);
+        const msg = `Execution order: ${data.labels.join(' → ')}`;
+        useWorkflowStore.getState().addLog(msg);
+        onLog?.(msg);
     });
 
     // Listen for workflow completion

@@ -3,14 +3,14 @@ import { ToolDefinition } from '../../types/ToolDefinition';
 const tool: ToolDefinition = {
     id: 'csv-input',
     name: 'CSV Input',
-    description: 'Load a CSV file from the local file system',
+    description: 'Load a CSV file from the local file system using Pandas',
     category: 'Input',
     version: '1.0.0',
     inputs: [
         { name: 'trigger', type: 'signal', description: 'Trigger to execute this node' }
     ],
     outputs: [
-        { name: 'data', type: 'dataset', description: 'Loaded data' }
+        { name: 'data', type: 'dataset', description: 'Loaded DataFrame' }
     ],
     parameters: [
         {
@@ -18,26 +18,45 @@ const tool: ToolDefinition = {
             type: 'file',
             label: 'CSV File',
             required: true
+        },
+        {
+            name: 'sep',
+            type: 'string', // Should be changed to 'text' if we want editable text, or 'select' for common separators
+            label: 'Separator',
+            default: ',',
+            required: false
+        },
+        {
+            name: 'header',
+            type: 'boolean',
+            label: 'Has Header',
+            default: true,
+            required: false
         }
     ],
     defaultCode: `# CSV Input Node
-# Parameter 'path' is injected automatically
+import pandas as pd
+import os
 
-if (exists("path") && path != "") {
-    print(paste("Loading CSV from:", path))
-    if (file.exists(path)) {
-        data <- read.csv(path)
-        print(paste("Rows:", nrow(data), "Columns:", ncol(data)))
-        print(head(data))
-    } else {
-        print(paste("Error: File not found at", path))
-    }
-} else {
-    print("No file selected. Please choose a CSV file.")
-}
+path = params.get('path', '')
+sep = params.get('sep', ',')
+has_header = 0 if params.get('header', True) else None
+
+if path and os.path.exists(path):
+    print(f"Loading CSV from: {path}")
+    try:
+        data = pd.read_csv(path, sep=sep, header=has_header)
+        print(f"Loaded {len(data)} rows and {len(data.columns)} columns")
+        print(data.head())
+    except Exception as e:
+        print(f"Error loading CSV: {e}")
+        raise e
+else:
+    print("Error: Invalid file path or file not found")
+    raise FileNotFoundError(f"File not found: {path}")
 `,
-    language: 'r',
-    libraries: ['utils'] // Base R CSV reading functions
+    language: 'python',
+    libraries: ['pandas']
 };
 
 export default tool;

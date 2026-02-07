@@ -415,6 +415,15 @@ electron_1.app.on('ready', () => {
             return filePaths[0];
         }
     }));
+    electron_1.ipcMain.handle('dialog:saveFile', (event, options) => __awaiter(void 0, void 0, void 0, function* () {
+        const { canceled, filePath } = yield electron_1.dialog.showSaveDialog(mainWindow, Object.assign(Object.assign({}, options), { properties: ['showOverwriteConfirmation', 'createDirectory'] }));
+        if (canceled) {
+            return null;
+        }
+        else {
+            return filePath;
+        }
+    }));
     // Package Manager IPC Handlers
     // PYTHON
     electron_1.ipcMain.handle('package:list-python', () => __awaiter(void 0, void 0, void 0, function* () {

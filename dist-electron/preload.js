@@ -40,6 +40,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     stopPythonSession: () => electron_1.ipcRenderer.invoke('stop-python-session'),
     // File Dialog API
     openFileDialog: () => electron_1.ipcRenderer.invoke('dialog:openFile'),
+    saveFileDialog: (options) => electron_1.ipcRenderer.invoke('dialog:saveFile', options),
     // Package Manager API
     listPythonPackages: () => electron_1.ipcRenderer.invoke('package:list-python'),
     installPythonPackage: (name) => electron_1.ipcRenderer.invoke('package:install-python', name),

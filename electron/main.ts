@@ -458,6 +458,18 @@ app.on('ready', () => {
         }
     });
 
+    ipcMain.handle('dialog:saveFile', async (event, options) => {
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow!, {
+            ...options,
+            properties: ['showOverwriteConfirmation', 'createDirectory']
+        });
+        if (canceled) {
+            return null;
+        } else {
+            return filePath;
+        }
+    });
+
     // Package Manager IPC Handlers
     // PYTHON
     ipcMain.handle('package:list-python', async () => {

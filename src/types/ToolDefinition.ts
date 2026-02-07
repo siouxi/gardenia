@@ -8,7 +8,7 @@ export type ToolCategory =
 
 export interface ToolParameter {
     name: string;
-    type: 'string' | 'number' | 'boolean' | 'select' | 'file';
+    type: 'string' | 'number' | 'boolean' | 'select' | 'file' | 'save-file' | 'text';
     label: string;
     description?: string;
     default?: any;

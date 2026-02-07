@@ -17,11 +17,10 @@ const iconMap: Record<string, any> = {
     'Utilities': UtilitiesIcon
 };
 
-export const ResolveNode = ({ data, selected }: NodeProps) => {
+export const ResolveNode = ({ id, data, selected }: NodeProps) => {
     const Icon = iconMap[String(data.category)] || iconMap['QC'];
     const toolData = data.toolData as any;
 
-    // Default to at least one IO if missing definition, for backward compat or generic nodes
     // Default to at least one IO if missing definition, for backward compat or generic nodes
     const inputs = toolData?.inputs || [];
 
@@ -106,30 +105,34 @@ export const ResolveNode = ({ data, selected }: NodeProps) => {
                 {toolData?.parameters && toolData.parameters.length > 0 && (
                     <div className="py-2 space-y-2">
                         {toolData.parameters.map((param: any) => {
-                            if (param.type === 'file') {
+                            if (param.type === 'file' || param.type === 'save-file') {
                                 const currentValue = (data.parameterValues as any)?.[param.name] || '';
-                                const fileName = currentValue ? currentValue.split(/[/\\]/).pop() : 'Select File';
+                                const fileName = currentValue ? currentValue.split(/[/\\]/).pop() : (param.type === 'save-file' ? 'Save As...' : 'Select File');
 
                                 const handleFileClick = async () => {
                                     if ((window as any).electronAPI) {
-                                        const path = await (window as any).electronAPI.openFileDialog();
+                                        let path;
+                                        if (param.type === 'save-file') {
+                                            path = await (window as any).electronAPI.saveFileDialog({
+                                                title: 'Save Output File',
+                                                defaultPath: 'output.csv',
+                                                filters: [
+                                                    { name: 'CSV Files', extensions: ['csv'] },
+                                                    { name: 'Parquet Files', extensions: ['parquet'] },
+                                                    { name: 'All Files', extensions: ['*'] }
+                                                ]
+                                            });
+                                        } else {
+                                            path = await (window as any).electronAPI.openFileDialog();
+                                        }
+
                                         if (path) {
-                                            // Update node data using ReactFlow hook would be ideal, 
-                                            // but we need to pass setNodes or similar. 
-                                            // For now, let's assume we can update local state or trigger a change up the chain.
-                                            // Actually, in a Node component, we don't strictly have access to setNodes unless passed or via hook.
-                                            // Let's rely on an event or property update if possible.
-                                            // Since we are inside the Node, we can use useReactFlow to update.
-                                            // But I need to import it. I'll do that in a separate edit if needed, or assume it behaves like a standard node.
-
-                                            // Note: In React Flow v11+, useReactFlow is available.
-                                            // I added import at top, so I should use it.
-
-                                            // Dispatch custom event for the parent flow to catch (simple approach) or direct update
+                                            console.log('[ResolveNode] Selected file:', path);
                                             const event = new CustomEvent('node:update-parameter', {
-                                                detail: { nodeId: data.id, paramName: param.name, value: path }
+                                                detail: { nodeId: id, paramName: param.name, value: path }
                                             });
                                             window.dispatchEvent(event);
+                                            console.log('[ResolveNode] Dispatched node:update-parameter event');
                                         }
                                     }
                                 };
@@ -143,7 +146,7 @@ export const ResolveNode = ({ data, selected }: NodeProps) => {
                                             title={currentValue}
                                         >
                                             <span className="truncate flex-1">{fileName}</span>
-                                            <span className="text-[#666] text-[9px] shrink-0">📂</span>
+                                            <span className="text-[#666] text-[9px] shrink-0">{param.type === 'save-file' ? '💾' : '📂'}</span>
                                         </button>
                                     </div>
                                 );

@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stopPythonSession: () => ipcRenderer.invoke('stop-python-session'),
     // File Dialog API
     openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
+    saveFileDialog: (options: any) => ipcRenderer.invoke('dialog:saveFile', options),
 
     // Package Manager API
     listPythonPackages: () => ipcRenderer.invoke('package:list-python'),

@@ -113,6 +113,7 @@ const Flow = () => {
 
         const onNodeUpdateParameter = (e: any) => {
             const { nodeId, paramName, value } = e.detail;
+            log(`[App] Update param: ${nodeId} -> ${paramName} = ${value}`);
             setNodes((nds) =>
                 nds.map((node) => {
                     if (node.id === nodeId) {
@@ -160,7 +161,7 @@ const Flow = () => {
 
     // Initialize workflow event listeners on mount
     useEffect(() => {
-        initWorkflowEventListeners();
+        initWorkflowEventListeners((msg) => log(msg));
     }, []);
 
     // Sync workflowStore node states to canvas nodes for real-time visualization
@@ -373,7 +374,7 @@ const Flow = () => {
                         toolId: n.data.toolId,
                         code: n.data.code || '',
                         language: n.data.language || 'python',
-                        parameters: n.data.parameterValues || {},
+                        parameterValues: n.data.parameterValues || {},
                     }
                 })),
                 edges: edges.map(e => ({
@@ -502,6 +503,8 @@ const Flow = () => {
             const code = node.data.code || '# No code defined';
             const language = node.data.language || 'python';
             const params = node.data.parameterValues || {};
+
+            log(`[${node.data.label}] Params: ${JSON.stringify(params)}`);
 
             let codeToExecute = code;
             let paramPrefix = '';
