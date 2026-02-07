@@ -18,6 +18,7 @@ import { getLayoutedElements } from './utils/layout';
 import { validateWorkflowLibraries, installMissingLibraries } from './utils/LibraryValidator';
 import { useWorkflowStore, initWorkflowEventListeners } from './stores/workflowStore';
 import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
+import { ProgressBar } from './components/ProgressBar';
 
 export interface NodeData {
     label: string;
@@ -729,6 +730,7 @@ const Flow = () => {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <ProgressBar />
                     <button
                         className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
                         onClick={runWorkflow}
