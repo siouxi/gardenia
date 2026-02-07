@@ -27,7 +27,7 @@ export interface NodeData {
     parameterValues?: Record<string, any>;
     code?: string; // Python/R code for execution
     language?: 'python' | 'r'; // Execution language
-    executionState?: 'pending' | 'running' | 'success' | 'error'; // Visual feedback
+    executionState?: 'pending' | 'queued' | 'running' | 'success' | 'error' | 'skipped' | 'cancelled'; // Visual feedback
     [key: string]: any; // Index signature for ReactFlow compatibility
 }
 
@@ -155,11 +155,27 @@ const Flow = () => {
     // const updateNodeExecutionState = useWorkflowStore((state) => state.updateNodeState);
     // const setWorkflowStatus = useWorkflowStore((state) => state.setStatus);
     const addWorkflowLog = useWorkflowStore((state) => state.addLog);
+    const nodeStates = useWorkflowStore((state) => state.nodeStates);
 
     // Initialize workflow event listeners on mount
     useEffect(() => {
         initWorkflowEventListeners();
     }, []);
+
+    // Sync workflowStore node states to canvas nodes for real-time visualization
+    useEffect(() => {
+        if (nodeStates.size === 0) return;
+
+        setNodes((nds) =>
+            nds.map((n) => {
+                const stateInfo = nodeStates.get(n.id);
+                if (stateInfo) {
+                    return { ...n, data: { ...n.data, executionState: stateInfo.state } };
+                }
+                return n;
+            })
+        );
+    }, [nodeStates, setNodes]);
 
     // Console logging ref
     const logToConsoleRef = useRef<((log: string) => void) | null>(null);
@@ -342,175 +358,210 @@ const Flow = () => {
                 }
             }
 
-            // Get execution order using Topological Sort (Kahn's Algorithm)
+            // Reset workflow store state
+            useWorkflowStore.getState().reset();
+            useWorkflowStore.getState().setStatus('running');
 
-            const getExecutionOrder = (startNodeId: string): string[] => {
-                const inDegree = new Map<string, number>();
-                const order: string[] = [];
-                const queue: string[] = [];  // Nodes with in-degree 0
-
-                // Initialize in-degrees
-                nodes.forEach(node => {
-                    inDegree.set(node.id, 0);
-                });
-
-                // Calculate in-degrees
-                edges.forEach(edge => {
-                    const target = edge.target;
-                    inDegree.set(target, (inDegree.get(target) || 0) + 1);
-                });
-
-                // Start with nodes having 0 in-degree (should be START node)
-                // We trust the provided startNodeId is valid, but verify in-degree
-                if (inDegree.get(startNodeId) === 0) {
-                    queue.push(startNodeId);
-                } else {
-                    // Fallback: If Start has incoming edges (loops?), force add it?
-                    // For now, strict topology: find all 0 in-degrees relative to the reachable subgraph
-                    // Actually, simpler: Push ALL 0-in-degree nodes initially.
-                    nodes.forEach(node => {
-                        if (inDegree.get(node.id) === 0) {
-                            if (!queue.includes(node.id)) queue.push(node.id);
-                        }
-                    });
-                }
-
-                while (queue.length > 0) {
-                    const nodeId = queue.shift()!;
-                    order.push(nodeId);
-
-                    // Find outgoing edges from this node
-                    const outgoing = edges.filter(e => e.source === nodeId);
-
-                    outgoing.forEach(edge => {
-                        const target = edge.target;
-                        const currentInDegree = inDegree.get(target)! - 1;
-                        inDegree.set(target, currentInDegree);
-
-                        if (currentInDegree === 0) {
-                            queue.push(target);
-                        }
-                    });
-                }
-
-                return order;
+            // Prepare workflow data for DAG engine
+            const workflowData = {
+                nodes: nodes.map(n => ({
+                    id: n.id,
+                    type: n.type,
+                    data: {
+                        label: n.data.label,
+                        toolId: n.data.toolId,
+                        code: n.data.code || '',
+                        language: n.data.language || 'python',
+                        parameters: n.data.parameterValues || {},
+                    }
+                })),
+                edges: edges.map(e => ({
+                    id: e.id,
+                    source: e.source,
+                    target: e.target,
+                    sourceHandle: e.sourceHandle,
+                    targetHandle: e.targetHandle,
+                })),
             };
 
-            const startNode = startNodes[0];
-            const executionOrder = getExecutionOrder(startNode.id);
+            log('[DAG Engine] Sending workflow for execution...');
 
-            log(`[Info] Execution order: ${executionOrder.map(id => {
-                const n = nodes.find(node => node.id === id);
-                return n?.data.label || id;
-            }).join(' → ')}`);
-
-            // Execute nodes sequentially
-            for (let i = 0; i < executionOrder.length; i++) {
-                const nodeId = executionOrder[i];
-                const node = nodes.find(n => n.id === nodeId);
-                if (!node) {
-                    log(`[Error] Node ${nodeId} not found!`);
-                    continue;
-                }
-
-                const toolId = node.data.toolId;
-
-                // Skip START node (just triggers)
-                if (toolId === 'flow-start') {
-                    log(`[START] Workflow initiated`);
-                    continue;
-                }
-
-                // Handle END node
-                if (toolId === 'flow-end') {
-                    log(`[END] Workflow completed successfully ✅`);
-                    break;
-                }
-
-                const code = node.data.code || '# No code defined';
-                const language = node.data.language || 'python';
-                const params = node.data.parameterValues || {};
-
-                // Inject parameters as variables
-                let codeToExecute = code;
-                let paramPrefix = '';
-
-                Object.entries(params).forEach(([key, value]) => {
-                    if (value === undefined || value === null) return;
-
-                    if (language === 'r') {
-                        if (typeof value === 'string') {
-                            paramPrefix += `${key} <- ${JSON.stringify(value)}\n`;
-                        } else if (typeof value === 'boolean') {
-                            paramPrefix += `${key} <- ${value ? 'TRUE' : 'FALSE'}\n`;
-                        } else {
-                            paramPrefix += `${key} <- ${value}\n`;
-                        }
-                    } else {
-                        // Python
-                        if (typeof value === 'string') {
-                            paramPrefix += `${key} = ${JSON.stringify(value)}\n`;
-                        } else if (typeof value === 'boolean') {
-                            paramPrefix += `${key} = ${value ? 'True' : 'False'}\n`;
-                        } else {
-                            paramPrefix += `${key} = ${value}\n`;
-                        }
-                    }
-                });
-
-                if (paramPrefix) {
-                    codeToExecute = `${paramPrefix}\n${code}`;
-                }
-
-                log(`[${node.data.label}] Executing ${language} code...`);
-
-                // Update node state to 'running'
-                setNodes((nds) =>
-                    nds.map((n) =>
-                        n.id === nodeId
-                            ? { ...n, data: { ...n.data, executionState: 'running' } }
-                            : n
-                    )
-                );
-
+            // Check if orchestrator API is available
+            const api = (window as any).electronAPI;
+            if (api?.executeWorkflow) {
+                // Use new DAG orchestrator
                 try {
-                    let result;
-                    if (language === 'python') {
-                        result = await (window as any).electronAPI.executePythonCommand(codeToExecute);
-                    } else {
-                        result = await (window as any).electronAPI.executeRCommand(codeToExecute);
-                    }
+                    const result = await api.executeWorkflow(workflowData);
 
                     if (result.status === 'success') {
-                        log(`[${node.data.label}] ✅ Output:\n${result.output}`);
-
-                        // Update node state to 'success'
-                        setNodes((nds) =>
-                            nds.map((n) =>
-                                n.id === nodeId
-                                    ? { ...n, data: { ...n.data, executionState: 'success' } }
-                                    : n
-                            )
-                        );
+                        log('=== WORKFLOW EXECUTION COMPLETED ===');
                     } else {
-                        log(`[${node.data.label}] ❌ Error:\n${result.error || result.output}`);
-
-                        // Update node state to 'error'
-                        setNodes((nds) =>
-                            nds.map((n) =>
-                                n.id === nodeId
-                                    ? { ...n, data: { ...n.data, executionState: 'error' } }
-                                    : n
-                            )
-                        );
-
-                        // Removed duplicate log here
-                        return; // Stop execution on error
+                        log(`❌ Workflow failed: ${result.error || 'Unknown error'}`);
                     }
                 } catch (error) {
-                    log(`[${node.data.label}] ❌ Exception:\n${error}`);
+                    log(`❌ DAG execution error: ${error}`);
+                    useWorkflowStore.getState().setStatus('error');
+                }
+            } else {
+                // Fallback to legacy execution
+                log('[Fallback] Using legacy execution (DAG orchestrator not available)');
+                await runWorkflowLegacy();
+            }
 
-                    // Update node state to 'error'
+        } finally {
+            // Reset node execution states after delay
+            setTimeout(() => {
+                setNodes((nds) =>
+                    nds.map((n) => ({
+                        ...n,
+                        data: { ...n.data, executionState: undefined }
+                    }))
+                );
+            }, 2000);
+        }
+    };
+
+    // Legacy workflow execution (fallback)
+    const runWorkflowLegacy = async () => {
+        // Get execution order using Topological Sort (Kahn's Algorithm)
+        const getExecutionOrder = (startNodeId: string): string[] => {
+            const inDegree = new Map<string, number>();
+            const order: string[] = [];
+            const queue: string[] = [];
+
+            nodes.forEach(node => {
+                inDegree.set(node.id, 0);
+            });
+
+            edges.forEach(edge => {
+                const target = edge.target;
+                inDegree.set(target, (inDegree.get(target) || 0) + 1);
+            });
+
+            if (inDegree.get(startNodeId) === 0) {
+                queue.push(startNodeId);
+            } else {
+                nodes.forEach(node => {
+                    if (inDegree.get(node.id) === 0) {
+                        if (!queue.includes(node.id)) queue.push(node.id);
+                    }
+                });
+            }
+
+            while (queue.length > 0) {
+                const nodeId = queue.shift()!;
+                order.push(nodeId);
+
+                const outgoing = edges.filter(e => e.source === nodeId);
+
+                outgoing.forEach(edge => {
+                    const target = edge.target;
+                    const currentInDegree = inDegree.get(target)! - 1;
+                    inDegree.set(target, currentInDegree);
+
+                    if (currentInDegree === 0) {
+                        queue.push(target);
+                    }
+                });
+            }
+
+            return order;
+        };
+
+        const startNodes = nodes.filter(n => n.data.toolId === 'flow-start');
+        const startNode = startNodes[0];
+        const executionOrder = getExecutionOrder(startNode.id);
+
+        log(`[Info] Execution order: ${executionOrder.map(id => {
+            const n = nodes.find(node => node.id === id);
+            return n?.data.label || id;
+        }).join(' → ')}`);
+
+        // Execute nodes sequentially
+        for (let i = 0; i < executionOrder.length; i++) {
+            const nodeId = executionOrder[i];
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node) {
+                log(`[Error] Node ${nodeId} not found!`);
+                continue;
+            }
+
+            const toolId = node.data.toolId;
+
+            if (toolId === 'flow-start') {
+                log(`[START] Workflow initiated`);
+                continue;
+            }
+
+            if (toolId === 'flow-end') {
+                log(`[END] Workflow completed successfully ✅`);
+                break;
+            }
+
+            const code = node.data.code || '# No code defined';
+            const language = node.data.language || 'python';
+            const params = node.data.parameterValues || {};
+
+            let codeToExecute = code;
+            let paramPrefix = '';
+
+            Object.entries(params).forEach(([key, value]) => {
+                if (value === undefined || value === null) return;
+
+                if (language === 'r') {
+                    if (typeof value === 'string') {
+                        paramPrefix += `${key} <- ${JSON.stringify(value)}\n`;
+                    } else if (typeof value === 'boolean') {
+                        paramPrefix += `${key} <- ${value ? 'TRUE' : 'FALSE'}\n`;
+                    } else {
+                        paramPrefix += `${key} <- ${value}\n`;
+                    }
+                } else {
+                    if (typeof value === 'string') {
+                        paramPrefix += `${key} = ${JSON.stringify(value)}\n`;
+                    } else if (typeof value === 'boolean') {
+                        paramPrefix += `${key} = ${value ? 'True' : 'False'}\n`;
+                    } else {
+                        paramPrefix += `${key} = ${value}\n`;
+                    }
+                }
+            });
+
+            if (paramPrefix) {
+                codeToExecute = `${paramPrefix}\n${code}`;
+            }
+
+            log(`[${node.data.label}] Executing ${language} code...`);
+
+            setNodes((nds) =>
+                nds.map((n) =>
+                    n.id === nodeId
+                        ? { ...n, data: { ...n.data, executionState: 'running' } }
+                        : n
+                )
+            );
+
+            try {
+                let result;
+                if (language === 'python') {
+                    result = await (window as any).electronAPI.executePythonCommand(codeToExecute);
+                } else {
+                    result = await (window as any).electronAPI.executeRCommand(codeToExecute);
+                }
+
+                if (result.status === 'success') {
+                    log(`[${node.data.label}] ✅ Output:\n${result.output}`);
+
+                    setNodes((nds) =>
+                        nds.map((n) =>
+                            n.id === nodeId
+                                ? { ...n, data: { ...n.data, executionState: 'success' } }
+                                : n
+                        )
+                    );
+                } else {
+                    log(`[${node.data.label}] ❌ Error:\n${result.error || result.output}`);
+
                     setNodes((nds) =>
                         nds.map((n) =>
                             n.id === nodeId
@@ -519,28 +570,26 @@ const Flow = () => {
                         )
                     );
 
-                    log(`[${node.data.label}] ❌ Exception: ${error}`); // Changed alert to log
                     return;
                 }
+            } catch (error) {
+                log(`[${node.data.label}] ❌ Exception:\n${error}`);
 
-                // Small delay between nodes to prevent session blocking
-                await new Promise(resolve => setTimeout(resolve, 100));
+                setNodes((nds) =>
+                    nds.map((n) =>
+                        n.id === nodeId
+                            ? { ...n, data: { ...n.data, executionState: 'error' } }
+                            : n
+                    )
+                );
+
+                return;
             }
 
-            log('=== WORKFLOW EXECUTION COMPLETED ===');
-
-            // Reset all node execution states after a short delay
-            setTimeout(() => {
-                setNodes((nds) =>
-                    nds.map((n) => ({
-                        ...n,
-                        data: { ...n.data, executionState: undefined }
-                    }))
-                );
-            }, 2000); // 2 second delay to show final states
-        } finally {
-            // Cleanup if needed
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
+
+        log('=== WORKFLOW EXECUTION COMPLETED ===');
     };
     const onExport = useCallback(() => {
         const workflowData = {
