@@ -215,10 +215,10 @@ class RWorkerBridge:
         
         # Look for r_bridge.R in several locations
         possible_paths = [
-            # Relative to engine/core/ -> go up to GardeniaW/electron
-            os.path.join(module_dir, "..", "..", "GardeniaW", "electron", "r_bridge.R"),
-            # Or if running from GardeniaW
-            os.path.join(module_dir, "..", "..", "..", "GardeniaW", "electron", "r_bridge.R"),
+            # Relative to engine/core/ -> go up to gardeniaclient/electron
+            os.path.join(module_dir, "..", "..", "gardeniaclient", "electron", "r_bridge.R"),
+            # Or if running from gardeniaclient
+            os.path.join(module_dir, "..", "..", "..", "gardeniaclient", "electron", "r_bridge.R"),
             # Direct path
             os.path.join(module_dir, "..", "electron", "r_bridge.R"),
         ]
