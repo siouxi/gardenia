@@ -735,8 +735,8 @@ const Flow = () => {
             </div>
 
             {/* Top Bar */}
-            <header className="h-14 bg-[#1f1f23] border-b border-[#000] flex items-center px-4 justify-between shrink-0 select-none">
-                <div className="flex items-center gap-4">
+            <header className="h-14 bg-[#1f1f23] border-b border-[#000] flex items-center px-4 justify-between shrink-0 select-none relative">
+                <div className="flex items-center gap-4 z-10">
                     <button
                         onClick={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
                         className="text-[#666] hover:text-[#ccc] transition-colors"
@@ -747,7 +747,7 @@ const Flow = () => {
                     <GardeniasLogo variant="full" theme="dark" className="h-10" />
                 </div>
 
-                <div className="flex bg-[#121212] rounded p-0.5 gap-0.5">
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex bg-[#121212] rounded p-0.5 gap-0.5">
                     <button
                         onClick={() => setViewMode('workflow')}
                         className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'workflow' ? 'bg-[#333] text-white' : 'hover:bg-[#222] text-[#888]'}`}
@@ -781,7 +781,7 @@ const Flow = () => {
                     <button className="px-3 py-0.5 text-[11px] font-medium bg-[#d97706] text-black rounded-[2px] shadow-sm">REPORT</button>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 z-10">
                     <ProgressBar />
                     <button
                         className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
