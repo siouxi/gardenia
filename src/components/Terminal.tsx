@@ -28,9 +28,17 @@ declare global {
     }
 }
 
+export interface LogEntry {
+    timestamp: Date;
+    level: 'info' | 'warning' | 'error' | 'success';
+    source: 'System' | 'App' | 'R' | 'Python' | 'Node';
+    message: string;
+    nodeId?: string;
+}
+
 export const Terminal = ({ onAddTestNode, onLogToConsole }: {
     onAddTestNode?: () => void;
-    onLogToConsole?: (callback: (log: string) => void) => void;
+    onLogToConsole?: (callback: (log: string | LogEntry) => void) => void;
     isWorkflowRunning?: boolean;
 }) => {
     const [isOpen, setIsOpen] = useState(true);
@@ -67,15 +75,32 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
 
     const outputRef = useRef<HTMLDivElement>(null);
 
-    const [consoleLogs, setConsoleLogs] = useState<string[]>([
-        "[System] Gardenia Engine Ready..."
+    const [showTimestamps, setShowTimestamps] = useState(true);
+    const [filterSource, setFilterSource] = useState<string>('All');
+
+    const [consoleLogs, setConsoleLogs] = useState<LogEntry[]>([
+        {
+            timestamp: new Date(),
+            level: 'info',
+            source: 'System',
+            message: 'Gardenia Engine Ready...'
+        }
     ]);
 
     // Expose console logging to parent component
     useEffect(() => {
         if (onLogToConsole) {
-            onLogToConsole((log: string) => {
-                setConsoleLogs(prev => [...prev, log]);
+            onLogToConsole((log: string | LogEntry) => {
+                if (typeof log === 'string') {
+                    setConsoleLogs(prev => [...prev, {
+                        timestamp: new Date(),
+                        level: 'info',
+                        source: 'App',
+                        message: log
+                    }]);
+                } else {
+                    setConsoleLogs(prev => [...prev, log]);
+                }
             });
         }
     }, [onLogToConsole]);
@@ -91,7 +116,12 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                     setRSessionActive(true); // Keep session active
                     setConsoleLogs(prev => [
                         ...prev.slice(0, -1), // Remove "Detecting R installation..."
-                        `[System] R ${result.version || 'Session'} detected and session started`,
+                        {
+                            timestamp: new Date(),
+                            level: 'success',
+                            source: 'System',
+                            message: `R ${result.version || 'Session'} detected and session started`
+                        }
                     ]);
 
                     // Get R working directory
@@ -104,7 +134,12 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
 
                             setConsoleLogs(prev => [
                                 ...prev,
-                                `[Info] R working directory: ${workingDir}`
+                                {
+                                    timestamp: new Date(),
+                                    level: 'info',
+                                    source: 'R',
+                                    message: `Working directory: ${workingDir}`
+                                }
                             ]);
                         }
                     } catch (wdError) {
@@ -113,42 +148,87 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                 } else {
                     setConsoleLogs(prev => [
                         ...prev.slice(0, -1),
-                        "[Warning] R not detected or failed to start",
+                        {
+                            timestamp: new Date(),
+                            level: 'warning',
+                            source: 'System',
+                            message: 'R not detected or failed to start'
+                        }
                     ]);
                 }
             } catch (error) {
                 console.error('Failed to start R session:', error);
                 setConsoleLogs(prev => [
                     ...prev.slice(0, -1),
-                    "[Warning] R session auto-start failed",
+                    {
+                        timestamp: new Date(),
+                        level: 'error',
+                        source: 'System',
+                        message: 'R session auto-start failed'
+                    }
                 ]);
             }
 
             // Start Python
             try {
-                setConsoleLogs(prev => [...prev, "[Info] Detecting Python installation..."]);
+                setConsoleLogs(prev => [...prev, {
+                    timestamp: new Date(),
+                    level: 'info',
+                    source: 'System',
+                    message: 'Detecting Python installation...'
+                }]);
                 const result = await window.electronAPI.startPythonSession();
                 if (result.success && result.version) {
                     setPythonVersion(result.version);
                     setPythonSessionActive(true);
                     setConsoleLogs(prev => [
                         ...prev,
-                        `[System] Python ${result.version} detected and session started`,
-                        "[Info] Engines ready for workflow execution..."
+                        {
+                            timestamp: new Date(),
+                            level: 'success',
+                            source: 'System',
+                            message: `Python ${result.version} detected and session started`
+                        },
+                        {
+                            timestamp: new Date(),
+                            level: 'info',
+                            source: 'System',
+                            message: 'Engines ready for workflow execution...'
+                        }
                     ]);
                 } else {
                     setConsoleLogs(prev => [
                         ...prev,
-                        "[Warning] Python not detected or failed to start",
-                        "[Info] Ready for workflow execution (limited functionality)..."
+                        {
+                            timestamp: new Date(),
+                            level: 'warning',
+                            source: 'System',
+                            message: 'Python not detected or failed to start'
+                        },
+                        {
+                            timestamp: new Date(),
+                            level: 'info',
+                            source: 'System',
+                            message: 'Ready for workflow execution (limited functionality)...'
+                        }
                     ]);
                 }
             } catch (error) {
                 console.error('Failed to start Python session:', error);
                 setConsoleLogs(prev => [
                     ...prev,
-                    "[Warning] Python session auto-start failed",
-                    "[Info] Ready for workflow execution (limited functionality)..."
+                    {
+                        timestamp: new Date(),
+                        level: 'error',
+                        source: 'System',
+                        message: 'Python session auto-start failed'
+                    },
+                    {
+                        timestamp: new Date(),
+                        level: 'info',
+                        source: 'System',
+                        message: 'Ready for workflow execution (limited functionality)...'
+                    }
                 ]);
             }
 
@@ -469,18 +549,58 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                         </button>
                     </div>
                 </div>
+
+                {/* Console Controls */}
+                {activeTab === 'console' && isOpen && (
+                    <div className="flex items-center gap-2 mr-4" onClick={e => e.stopPropagation()}>
+                        <select
+                            value={filterSource}
+                            onChange={(e) => setFilterSource(e.target.value)}
+                            className="bg-[#2a2a2a] text-xs text-slate-300 border border-slate-600 rounded px-1 py-0.5 outline-none"
+                        >
+                            <option value="All">All Sources</option>
+                            <option value="System">System</option>
+                            <option value="App">App</option>
+                            <option value="R">R</option>
+                            <option value="Python">Python</option>
+                        </select>
+                        <button
+                            onClick={() => setShowTimestamps(!showTimestamps)}
+                            className={`px-2 py-0.5 text-[10px] rounded border border-slate-600 ${showTimestamps ? 'bg-emerald-900/50 text-emerald-400' : 'bg-[#2a2a2a] text-slate-400'}`}
+                        >
+                            Time
+                        </button>
+                    </div>
+                )}
+
                 <div className="flex items-center gap-2 text-slate-400">
                     {isOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                 </div>
             </div>
 
             <div className="flex-1 overflow-auto p-4 font-mono text-xs space-y-1" ref={outputRef}>
-                {activeTab === 'console' && consoleLogs.map((log, i) => (
-                    <div key={i} className="text-emerald-400 border-b border-slate-800/50 pb-0.5 mb-0.5 last:border-0 whitespace-pre-wrap">
-                        <span className="opacity-50 mr-2">[{new Date().toLocaleTimeString()}]</span>
-                        {log}
-                    </div>
-                ))}
+                {activeTab === 'console' && consoleLogs
+                    .filter(log => filterSource === 'All' || log.source === filterSource)
+                    .map((log, i) => {
+                        let colorClass = 'text-slate-300';
+                        if (log.level === 'error') colorClass = 'text-red-400';
+                        else if (log.level === 'warning') colorClass = 'text-yellow-400';
+                        else if (log.level === 'success') colorClass = 'text-emerald-400';
+                        else if (log.source === 'R') colorClass = 'text-blue-400';
+                        else if (log.source === 'Python') colorClass = 'text-yellow-300';
+
+                        return (
+                            <div key={i} className={`${colorClass} border-b border-slate-800/50 pb-0.5 mb-0.5 last:border-0 whitespace-pre-wrap flex`}>
+                                {showTimestamps && (
+                                    <span className="opacity-50 mr-2 shrink-0">
+                                        [{new Date(log.timestamp).toLocaleTimeString()}]
+                                    </span>
+                                )}
+                                <span className="mr-2 font-bold opacity-75">[{log.source}]</span>
+                                <span>{log.message}</span>
+                            </div>
+                        );
+                    })}
 
                 {activeTab === 'terminal' && (
                     <>
