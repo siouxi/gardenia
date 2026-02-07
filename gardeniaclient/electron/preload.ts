@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onNodeOutput: (callback: (data: { nodeId: string; output: string }) => void) => {
         ipcRenderer.on('workflow:node-output', (_, data) => callback(data));
     },
+    onNodeVariables: (callback: (data: { nodeId: string; variables: string[] }) => void) => {
+        ipcRenderer.on('workflow:node-variables', (_, data) => callback(data));
+    },
     onExecutionOrder: (callback: (data: { order: string[]; labels: string[] }) => void) => {
         ipcRenderer.on('workflow:execution-order', (_, data) => callback(data));
     },
@@ -68,4 +71,3 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stopBashSession: () => ipcRenderer.invoke('stop-bash-session'),
     getBashSessionStatus: () => ipcRenderer.invoke('get-bash-session-status'),
 });
-

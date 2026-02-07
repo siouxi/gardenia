@@ -1,268 +1,200 @@
 #!/usr/bin/env Rscript
 
-# R Bridge Script for JSON-based communication with Electron
-# Uses ONLY base R - no external packages required
+# R Bridge Script for Arrow IPC-based communication
+# Requires 'arrow' package
 
-#' Simple JSON parser for single-level objects (sufficient for our needs)
-#' @param json_str Character string containing JSON
-#' @return List with parsed values
-parse_simple_json <- function(json_str) {
-    # Extract command value using a simpler approach
-    # Match: "command" : "anything here"
-    # We need to handle escaped quotes within the value
-
-    # Find the start of "command"
-    cmd_start <- regexpr('"command"\\s*:\\s*"', json_str, perl = TRUE)
-    if (cmd_start < 0) {
-        return(NULL)
-    }
-
-    # Move past the opening quote
-    value_start <- cmd_start + attr(cmd_start, "match.length")
-
-    # Find the closing quote (not preceded by backslash)
-    remaining <- substring(json_str, value_start)
-
-    # Simple extraction: find the first unescaped quote
-    chars <- strsplit(remaining, "")[[1]]
-    result <- character(0)
-    i <- 1
-    while (i <= length(chars)) {
-        if (chars[i] == "\\" && i < length(chars)) {
-            # Escaped character - decode it
-            next_char <- chars[i + 1]
-            if (next_char == "n") {
-                result <- c(result, "\n")
-            } else if (next_char == "t") {
-                result <- c(result, "\t")
-            } else if (next_char == "r") {
-                result <- c(result, "\r")
-            } else if (next_char == "\\" || next_char == '"') {
-                result <- c(result, next_char)
-            } else {
-                # Unknown escape, keep as is
-                result <- c(result, next_char)
-            }
-            i <- i + 2
-        } else if (chars[i] == '"') {
-            # Found closing quote
-            break
-        } else {
-            result <- c(result, chars[i])
-            i <- i + 1
-        }
-    }
-
-    command <- paste(result, collapse = "")
-    list(command = command)
+# Check for arrow package existence quietly
+if (!requireNamespace("arrow", quietly = TRUE)) {
+    # If arrow is missing, we must output valid JSON error so the host can parse it
+    cat('{"status":"error","output":"","error":"The \'arrow\' package is required but not installed. Please run install.packages(\'arrow\').","variables":[]}\n')
+    quit(status = 0) # Quit successfully so the error message is received
 }
 
-#' Simple JSON serializer for response objects
-#' @param lst List with status, output, error, and variables
-#' @return JSON string
-to_simple_json <- function(lst) {
-    # Escape special characters in strings
-    escape_json <- function(str) {
-        if (is.null(str)) {
-            return("null")
-        }
-        str <- gsub("\\\\", "\\\\\\\\", str)
-        str <- gsub('"', '\\\\"', str)
-        str <- gsub("\n", "\\\\n", str)
-        str <- gsub("\r", "\\\\r", str)
-        str <- gsub("\t", "\\\\t", str)
-        paste0('"', str, '"')
-    }
+suppressPackageStartupMessages(library(arrow))
+suppressPackageStartupMessages(library(jsonlite))
 
-    # Serialize a variable object
-    serialize_var <- function(v) {
-        paste0(
-            "{",
-            '"name":', escape_json(v$name), ",",
-            '"value":', escape_json(as.character(v$value)), ",",
-            '"type_hint":', escape_json(v$type_hint), ",",
-            '"is_dataframe":', if (isTRUE(v$is_dataframe)) "true" else "false",
-            "}"
-        )
-    }
+# Suppress warnings during startup to keep stdout clean for JSON
+options(warn = -1)
 
-    parts <- character(0)
-    if (!is.null(lst$status)) {
-        parts <- c(parts, paste0('"status":', escape_json(lst$status)))
-    }
-    if (!is.null(lst$output)) {
-        parts <- c(parts, paste0('"output":', escape_json(lst$output)))
-    }
-    if (!is.null(lst$error)) {
-        parts <- c(parts, paste0('"error":', escape_json(lst$error)))
-    } else {
-        parts <- c(parts, '"error":null')
-    }
-
-    # Serialize variables array
-    if (!is.null(lst$variables) && length(lst$variables) > 0) {
-        vars_json <- sapply(lst$variables, serialize_var)
-        parts <- c(parts, paste0(
-            '"variables":[', paste(vars_json, collapse = ","), "]"
-        ))
-    } else {
-        parts <- c(parts, '"variables":[]')
-    }
-
-    paste0("{", paste(parts, collapse = ","), "}")
-}
-
-#' Execute R code and capture output
-#' @param code Character string containing R code to execute
-#' @param env Environment to execute code in (for persistent session)
-#' @return List with status, output, error, and variables
-run_code <- function(code, env) {
-    status <- "success"
-    output_text <- ""
-    error_msg <- NULL
-
+#' Execute R code with Arrow IPC context
+#' @param command_json JSON string containing command details
+#' @param env Environment to execute code in
+#' @return List response object
+process_command <- function(command_json, env) {
     tryCatch(
         {
-            # Capture all output (stdout and messages)
+            request <- fromJSON(command_json)
+
+            # 1. Load variables from Input IPC file (if provided)
+            if (!is.null(request$input_ipc) && file.exists(request$input_ipc)) {
+                tryCatch(
+                    {
+                        # Read all columns from the Arrow file into a table
+                        table <- read_ipc_file(request$input_ipc)
+
+                        # Convert to data frame (zero-copy where possible)
+                        df <- as.data.frame(table)
+
+                        # Assign each column as a variable in the environment
+                        for (col_name in names(df)) {
+                            # Assign to global scope for easy access
+                            assign(col_name, df[[col_name]], envir = env)
+
+                            # ALSO assign to 'inputs' list if it exists (created by worker_manager)
+                            # This allows unified access via inputs$data, etc.
+                            if (exists("inputs", envir = env)) {
+                                # We need to assign into the list 'inputs' in 'env'
+                                # R environments are tricky with nested assignment via assign()
+                                # Easiest is to use eval
+                                eval(parse(text = paste0("inputs[['", col_name, "']] <- ", col_name)), envir = env)
+                            } else {
+                                # Create inputs if missing
+                                assign("inputs", list(), envir = env)
+                                eval(parse(text = paste0("inputs[['", col_name, "']] <- ", col_name)), envir = env)
+                            }
+                        }
+                    },
+                    error = function(e) {
+                        warning(paste("Failed to load input IPC:", e$message))
+                    }
+                )
+            }
+
+            # 2. Execute Code and Capture Output
+            output_text <- ""
+            error_msg <- NULL
+            status <- "success"
+
+            # Capture stdout/stderr
+            # Note: worker_manager injects 'inputs' creation code before user code
             output_text <- capture.output(
                 {
-                    # Parse and evaluate the code with visibility tracking
-                    result <- withVisible(eval(parse(text = code), envir = env))
-
-                    # Only print if the result is visible (REPL-like behavior)
-                    # This prevents duplicate output for expressions
-                    if (result$visible && !is.null(result$value)) {
-                        print(result$value)
-                    }
+                    tryCatch(
+                        {
+                            eval(parse(text = request$code), envir = env)
+                        },
+                        error = function(e) {
+                            status <<- "error"
+                            print(e)
+                            error_msg <<- e$message
+                        }
+                    )
                 },
                 type = "output"
             )
 
-            # Collapse output lines into a single string
             output_text <- paste(output_text, collapse = "\n")
+
+            # 3. Write Output Variables to IPC
+            serialized_vars <- list()
+
+            # Only process variables if execution was successful or we want to inspect partial state
+            if (status == "success") {
+                tryCatch(
+                    {
+                        vars <- ls(envir = env, all.names = FALSE)
+
+                        # Create output directory for IPC files if needed
+                        output_dir <- if (!is.null(request$output_dir)) request$output_dir else tempdir()
+                        if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+                        for (var_name in vars) {
+                            # Skip 'inputs' variable itself to avoid circularity/redundancy
+                            if (var_name == "inputs") next
+
+                            val <- get(var_name, envir = env)
+
+                            # Basic metadata
+                            val_meta <- list(
+                                name = var_name,
+                                type_hint = class(val)[1],
+                                is_dataframe = FALSE
+                            )
+
+                            if (is.data.frame(val)) {
+                                # Write DataFrame to Arrow IPC
+                                fname <- paste0(request$id, "_", var_name, ".arrow")
+                                fpath <- file.path(output_dir, fname)
+
+                                tryCatch(
+                                    {
+                                        write_ipc_file(val, fpath, compression = "zstd")
+
+                                        val_meta$ipc_path <- fpath
+                                        val_meta$is_dataframe <- TRUE
+                                        val_meta$preview <- paste("DataFrame:", nrow(val), "rows x", ncol(val), "cols")
+                                        val_meta$value <- "[DataFrame stored in IPC]"
+                                    },
+                                    error = function(e) {
+                                        val_meta$error <- paste("Failed to write IPC:", e$message)
+                                    }
+                                )
+                            } else if (is.atomic(val) && length(val) <= 100) {
+                                # Small atomic vectors -> distinct value
+                                val_meta$value <- val
+                            } else {
+                                # Complex objects or large vectors -> string representation
+                                preview <- capture.output(print(head(val)))
+                                val_meta$value <- paste(preview, collapse = "\n")
+                            }
+
+                            serialized_vars[[length(serialized_vars) + 1]] <- val_meta
+                        }
+                    },
+                    error = function(e) {
+                        output_text <<- paste(output_text, paste("Serialization warning:", e$message), sep = "\n")
+                    }
+                )
+            }
+
+            list(
+                id = request$id,
+                status = status,
+                output = output_text,
+                error = error_msg,
+                variables = serialized_vars
+            )
         },
         error = function(e) {
-            status <<- "error"
-            error_msg <<- paste("Error:", conditionMessage(e))
-        },
-        warning = function(w) {
-            # Warnings are treated as part of output, not errors
-            output_text <<- paste(
-                output_text, "\nWarning:", conditionMessage(w),
-                sep = "\n"
+            list(
+                status = "error",
+                output = "",
+                error = paste("Bridge internal error:", e$message),
+                variables = list()
             )
         }
     )
-
-    # Extract variables from session environment
-    variables <- extract_variables(env)
-
-    list(
-        status = status,
-        output = output_text,
-        error = error_msg,
-        variables = variables
-    )
 }
 
-#' Extract variables from environment
-#' @param env Environment to extract from
-#' @return List of variable info
-extract_variables <- function(env) {
-    var_names <- ls(env)
-    if (length(var_names) == 0) {
-        return(list())
-    }
-
-    vars <- lapply(var_names, function(name) {
-        value <- get(name, envir = env)
-
-        # Determine type
-        type_hint <- class(value)[1]
-        is_df <- is.data.frame(value)
-
-        # Serialize value (simple types only, truncate for large objects)
-        serialized_value <- tryCatch(
-            {
-                if (is_df) {
-                    paste0(
-                        "[data.frame: ", nrow(value), " rows x ", ncol(value), " cols]"
-                    )
-                } else if (is.function(value)) {
-                    "[function]"
-                } else if (is.environment(value)) {
-                    "[environment]"
-                } else if (length(value) > 100) {
-                    paste0("[", type_hint, ": length ", length(value), "]")
-                } else if (is.atomic(value) && length(value) <= 10) {
-                    # Small atomic vectors - convert to string
-                    paste(as.character(value), collapse = ", ")
-                } else {
-                    paste0("[", type_hint, "]")
-                }
-            },
-            error = function(e) {
-                "[unable to serialize]"
-            }
-        )
-
-        list(
-            name = name,
-            value = serialized_value,
-            type_hint = type_hint,
-            is_dataframe = is_df
-        )
-    })
-
-    vars
-}
-
-#' Main loop: read JSON from stdin, execute, return JSON
+# Main Loop
 main <- function() {
-    # Create persistent environment for session state
+    # Environment for the user session
     session_env <- new.env(parent = .GlobalEnv)
 
-    # Set stdin connection to read line by line
     stdin_con <- file("stdin", "r", blocking = TRUE)
 
-    # Main REPL loop
     while (TRUE) {
-        # Read one line from stdin
+        # Read line-by-line
         line <- readLines(stdin_con, n = 1, warn = FALSE)
 
-        # Check for EOF
         if (length(line) == 0) {
-            break
+            break # EOF
         }
 
-        # Try to parse JSON request
-        request <- tryCatch(
-            {
-                parse_simple_json(line)
-            },
-            error = function(e) {
-                NULL
-            }
-        )
-
-        # Ignore malformed JSON
-        if (is.null(request) || is.null(request$command)) {
-            next
+        if (nchar(line) == 0) {
+            next # Empty line
         }
 
-        # Execute command
-        response <- run_code(request$command, session_env)
+        # Process
+        response <- process_command(line, session_env)
 
-        # Send JSON response as a single line
-        response_json <- to_simple_json(response)
-        cat(response_json, "\n", sep = "")
+        # Send JSON response
+        cat(toJSON(response, auto_unbox = TRUE), "\n")
         flush(stdout())
     }
-
     close(stdin_con)
 }
 
-# Run main loop
 if (!interactive()) {
     main()
 }

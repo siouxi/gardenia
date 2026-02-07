@@ -170,6 +170,13 @@ export class WorkflowOrchestrator extends EventEmitter {
                 }
                 break;
 
+            case 'node_variables':
+                if (event.node_id && event.variables) {
+                    // Emit to main process
+                    this.emit('nodeVariables', event.node_id, event.variables);
+                }
+                break;
+
             case 'execution_order':
                 if (this.executionState && event.order) {
                     this.executionState.executionOrder = event.order;

@@ -308,6 +308,10 @@ app.on('ready', () => {
         mainWindow?.webContents.send('workflow:node-output', { nodeId, output });
     });
 
+    orchestrator.on('nodeVariables', (nodeId: string, variables: string[]) => {
+        mainWindow?.webContents.send('workflow:node-variables', { nodeId, variables });
+    });
+
     orchestrator.on('executionOrder', (order: string[], labels: string[]) => {
         mainWindow?.webContents.send('workflow:execution-order', { order, labels });
     });

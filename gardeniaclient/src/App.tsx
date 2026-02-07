@@ -207,6 +207,38 @@ const Flow = () => {
         initWorkflowEventListeners((msg) => log(msg));
     }, []);
 
+    // Listen for dynamic variable creation to update node ports
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (!api?.onNodeVariables) return;
+
+        api.onNodeVariables(({ nodeId, variables }: { nodeId: string, variables: string[] }) => {
+            log(`[App] Node ${nodeId} created variables: ${variables.join(', ')}`);
+
+            setNodes((nds) => nds.map((node) => {
+                if (node.id === nodeId && node.data.toolId === 'variables') {
+                    const newOutputs = variables.map(v => ({
+                        name: v,
+                        type: 'dataset',
+                        description: `Variable: ${v}`
+                    }));
+
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            toolData: {
+                                ...node.data.toolData,
+                                outputs: newOutputs.length > 0 ? newOutputs : node.data.toolData.outputs
+                            }
+                        }
+                    };
+                }
+                return node;
+            }));
+        });
+    }, [setNodes]);
+
     // Sync workflowStore node states to canvas nodes for real-time visualization
     useEffect(() => {
         if (nodeStates.size === 0) return;

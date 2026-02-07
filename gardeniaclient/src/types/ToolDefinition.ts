@@ -8,12 +8,16 @@ export type ToolCategory =
 
 export interface ToolParameter {
     name: string;
-    type: 'string' | 'number' | 'boolean' | 'select' | 'file' | 'save-file' | 'text';
+    type: 'string' | 'number' | 'boolean' | 'select' | 'file' | 'save-file' | 'text' | 'slider' | 'toggle';
     label: string;
     description?: string;
     default?: any;
     options?: string[]; // For 'select' type
     required?: boolean;
+    // For slider/number
+    min?: number;
+    max?: number;
+    step?: number;
 }
 
 export interface ToolIO {

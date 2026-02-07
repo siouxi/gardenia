@@ -196,6 +196,15 @@ class DAGExecutor:
             "output": output
         }
         print(json.dumps(msg), flush=True)
+
+    def _emit_variables(self, node_id: str, variables: List[str]) -> None:
+        """Emit created variables via callback"""
+        msg = {
+            "type": "node_variables",
+            "node_id": node_id,
+            "variables": variables
+        }
+        print(json.dumps(msg), flush=True)
     
     async def execute(
         self,
@@ -286,6 +295,13 @@ class DAGExecutor:
             if status == "success":
                 self._update_state(node_id, ExecutionState.SUCCESS)
                 self._emit_output(node_id, result.get("output", ""))
+                
+                # Emit created variables if any
+                created_vars = result.get("variables_created")
+                if created_vars:
+                    # Convert set to list for JSON serialization
+                    var_list = list(created_vars) if isinstance(created_vars, set) else created_vars
+                    self._emit_variables(node_id, var_list)
             elif status == "timeout":
                 self._update_state(node_id, ExecutionState.TIMEOUT)
                 node.error = result.get("error", "Execution timed out")

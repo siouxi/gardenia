@@ -16,11 +16,23 @@ import io
 import json
 import sys
 import traceback
+import tempfile
+import os
+import shutil
 from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict, Optional, Set
 import logging
+from pathlib import Path
+
+# Try importing pyarrow
+try:
+    import pyarrow as pa
+    import pyarrow.ipc
+    ARROW_AVAILABLE = True
+except ImportError:
+    ARROW_AVAILABLE = False
 
 from .variable_registry import VariableRegistry, VariableScope, get_registry
 from .errors import GardeniaError, parse_python_error, parse_r_error, ErrorCategory
@@ -97,12 +109,21 @@ class PythonWorker:
         safe_params = parameters or {}
         self._namespace['params'] = safe_params
         
+        # CREATE INPUTS DICTIONARY
+        # Start with parameters
+        self._namespace['inputs'] = safe_params.copy()
+        
         for key, value in safe_params.items():
             if value is not None:
                 self._namespace[key] = value
         
         # Inject registry variables
         self.registry.inject_into_namespace(self._namespace, node_id)
+        
+        # Populate inputs with registry variables (excluding internals)
+        for key, value in self._namespace.items():
+            if key not in ['params', 'inputs', '__builtins__'] and not key.startswith('_'):
+                self._namespace['inputs'][key] = value
         
         # Record initial keys to detect new variables
         self._initial_keys = set(self._namespace.keys())
@@ -189,7 +210,10 @@ class PythonWorker:
     
     def get_namespace(self) -> Dict[str, Any]:
         """Get current namespace (for debugging)"""
-        return self._namespace.copy()
+        if self._namespace:
+            return self._namespace.copy()
+        else:
+            return {}
 
 
 class RWorkerBridge:
@@ -205,7 +229,13 @@ class RWorkerBridge:
         self._bridge_script: Optional[str] = None
         self._pending_data: str = ""
         self._is_ready: bool = False
+        self._temp_dir = tempfile.mkdtemp(prefix="gardenia_r_ipc_")
     
+    def __del__(self):
+        # Cleanup temp dir
+        if os.path.exists(self._temp_dir):
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            
     def _find_bridge_script(self) -> Optional[str]:
         """Find the r_bridge.R script"""
         import os
@@ -278,6 +308,107 @@ class RWorkerBridge:
         """Check if R process is running"""
         return self._process is not None and self._process.poll() is None
     
+    def _create_input_ipc(self, node_id: str, parameters: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """ Create Arrow IPC file with input dataframe for R. """
+        if not ARROW_AVAILABLE:
+            return None
+            
+        data = {}
+        
+        # Only inject workflow variables that seem to be dataframes
+        # Or inject parameters that are tables
+        workflow_vars = self.registry.get_all_workflow_vars()
+        all_inputs = {**(parameters or {}), **workflow_vars}
+        
+        target_df = None
+        target_name = None
+        
+        # Prefer 'data' variable if exists
+        if 'data' in all_inputs:
+             v = all_inputs['data']
+             # Check if it's dataframe-like
+             if isinstance(v, (pa.Table, dict)) or hasattr(v, 'to_parquet'):
+                 target_name = 'data'
+                 target_df = v
+        
+        if target_df is None:
+            # Find first dataframe-like
+             for k, v in all_inputs.items():
+                 if hasattr(v, 'to_parquet') or isinstance(v, pa.Table):
+                     target_name = k
+                     target_df = v
+                     break
+        
+        if target_df is not None:
+            try:
+                if isinstance(target_df, pa.Table):
+                    table = target_df
+                elif hasattr(target_df, 'to_parquet') and ARROW_AVAILABLE: # Pandas
+                     # Ensure we convert pandas to Arrow Table
+                     try: 
+                         table = pa.Table.from_pandas(target_df)
+                     except:
+                         # Fallback or already Table-like?
+                         return None
+                else: 
+                     return None
+
+                fname = f"{node_id}_input.arrow"
+                fpath = os.path.join(self._temp_dir, fname)
+                
+                with pa.OSFile(fpath, 'wb') as sink:
+                    with pa.ipc.new_file(sink, table.schema) as writer:
+                        writer.write(table)
+                        
+                return fpath
+            except Exception as e:
+                log.warning(f"Failed to create Arrow IPC: {e}")
+                return None
+                
+        return None
+
+    def _prepare_request(
+        self,
+        code: str,
+        node_id: str,
+        parameters: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Prepare JSON command"""
+        # Create input IPC if applicable
+        input_ipc = self._create_input_ipc(node_id, parameters)
+        
+        # Also inject simple parameters as code for fallback/hybrid
+        param_code = ""
+        
+        # NEW: Inject 'inputs' list for unified access in R too
+        inputs_code = "inputs <- list()\n"
+        
+        all_data = {**(parameters or {}), **self.registry.get_all_workflow_vars()}
+        
+        for key, value in all_data.items():
+            if value is None: continue
+            # Skip complex objects
+            if hasattr(value, 'shape') or isinstance(value, (list, dict)): continue
+            
+            if isinstance(value, str):
+                val_json = json.dumps(value)
+                param_code += f'{key} <- {val_json}\n'
+                inputs_code += f'inputs[["{key}"]] <- {val_json}\n'
+            elif isinstance(value, (int, float, bool)):
+                 val_str = str(value).upper() if isinstance(value, bool) else str(value)
+                 param_code += f'{key} <- {val_str}\n'
+                 inputs_code += f'inputs[["{key}"]] <- {val_str}\n'
+                 
+        full_code = param_code + inputs_code + code
+        
+        cmd = {
+            "id": node_id,
+            "code": full_code,
+            "output_dir": self._temp_dir,
+            "input_ipc": input_ipc
+        }
+        return json.dumps(cmd)
+
     async def execute(
         self,
         code: str,
@@ -288,193 +419,73 @@ class RWorkerBridge:
     ) -> ExecutionResult:
         """
         Execute R code.
-        
-        Args:
-            code: R code to execute
-            node_id: ID of the executing node
-            parameters: Node parameters to inject
-            r_executor: External R executor function (optional, for Electron integration)
-            timeout: Maximum execution time in seconds (default: 60)
-        
-        Returns:
-            ExecutionResult
         """
-        import asyncio
-        
-        # If external executor provided (Electron R session), use it
-        if r_executor:
-            try:
-                # Prepare parameter injection code
-                full_code = self._prepare_code(code, parameters)
-                # Apply timeout using asyncio.wait_for
-                result = await asyncio.wait_for(r_executor(full_code), timeout=timeout)
-                
-                # Check if error in result
-                if result.get("status") == "error":
-                    error_data = parse_r_error(result.get("error", "Unknown error"), node_id)
-                    return ExecutionResult(
-                        status="error",
-                        output=result.get("output", ""),
-                        error=result.get("error"),
-                        error_data=error_data,
-                    )
-                
-                return ExecutionResult(
-                    status=result.get("status", "success"),
-                    output=result.get("output", ""),
-                    error=result.get("error"),
-                )
-            except asyncio.TimeoutError:
-                error_data = GardeniaError(
-                    category=ErrorCategory.TIMEOUT,
-                    message=f"R execution timed out after {timeout} seconds",
-                    language="r",
-                    node_id=node_id,
-                    recoverable=True,
-                )
-                return ExecutionResult(
-                    status="timeout",
-                    output="",
-                    error=error_data.message,
-                    error_data=error_data,
-                )
-            except Exception as e:
-                error_data = parse_r_error(str(e), node_id)
-                return ExecutionResult(
-                    status="error",
-                    output="",
-                    error=str(e),
-                    error_data=error_data,
-                )
-        
-        # Otherwise use our own subprocess
         if not self.is_running():
-            started = await self.start()
-            if not started:
-                error_data = GardeniaError(
-                    category=ErrorCategory.SESSION,
-                    message="Failed to start R process. Is Rscript installed?",
-                    language="r",
-                    node_id=node_id,
-                )
-                return ExecutionResult(
-                    status="error",
-                    output="",
-                    error=error_data.message,
-                    error_data=error_data,
-                )
-        
-        # Prepare code with parameter injection
-        full_code = self._prepare_code(code, parameters)
-        
-        # Send to R process
+            if not await self.start():
+                 return ExecutionResult(status="error", output="", error="Failed to start R process")
+
         try:
-            # Escape code for JSON
-            escaped_code = full_code.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
-            request = f'{{"command": "{escaped_code}"}}\n'
+            request_json = self._prepare_request(code, node_id, parameters)
             
-            self._process.stdin.write(request)
+            self._process.stdin.write(request_json + "\n")
             self._process.stdin.flush()
             
-            # Read response (with timeout)
-            import select
-            import sys
-            
-            # Simple blocking read for now
+            # Read response
             response_line = self._process.stdout.readline()
-            
             if not response_line:
-                return ExecutionResult(
-                    status="error",
-                    output="",
-                    error="R process returned empty response",
-                )
+                 return ExecutionResult(status="error", output="", error="R process died/empty response")
             
-            # Parse JSON response
             try:
-                response = json.loads(response_line.strip())
+                response = json.loads(response_line)
+            except json.JSONDecodeError:
+                 return ExecutionResult(status="error", output=response_line, error="Invalid JSON response")
+            
+            status = response.get("status", "error")
+            output = response.get("output", "")
+            error = response.get("error")
+            variables = response.get("variables", [])
+            
+            created_vars = set()
+            
+            # Process returned vars
+            for v in variables:
+                name = v.get("name")
+                if not name: continue
                 
-                # Extract and register variables if present
-                variables = response.get("variables", [])
-                variable_names = set()
+                val = v.get("value")
                 
-                if variables and isinstance(variables, list):
-                    for v in variables:
-                        name = v.get("name")
-                        if name:
-                            variable_names.add(name)
-                            # Register execution result variables in workflow scope (or node scope?)
-                            # R session is persistent for the workflow, so WORKFLOW scope makes sense.
-                            # But if it's node-specific, maybe NODE scope?
-                            # For now use WORKFLOW scope as R environment is shared.
-                            self.registry.set(
-                                name=name,
-                                value=v.get("value"),
-                                scope=VariableScope.WORKFLOW,
-                                node_id=node_id,
-                                type_hint=v.get("type_hint"),
-                                is_dataframe=v.get("is_dataframe", False),
-                            )
+                # Check for IPC file
+                if v.get("is_dataframe") and v.get("ipc_path") and ARROW_AVAILABLE:
+                    ipc_path = v.get("ipc_path")
+                    if os.path.exists(ipc_path):
+                        try:
+                            # Read Table back
+                            with pa.ipc.open_file(ipc_path) as reader:
+                                table = reader.read_all()
+                                val = table.to_pandas() # Convert to pandas for Python ecosystem compatibility
+                        except Exception as e:
+                            log.error(f"Failed to read IPC from R: {e}")
                 
-                return ExecutionResult(
-                    status=response.get("status", "error"),
-                    output=response.get("output", ""),
-                    error=response.get("error"),
-                    variables_created=variable_names,
-                )
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    status="error",
-                    output=response_line,
-                    error=f"Failed to parse R response: {e}",
-                )
+                if val is not None:
+                    created_vars.add(name)
+                    self.registry.set(
+                        name=name,
+                        value=val,
+                        scope=VariableScope.WORKFLOW,
+                        node_id=node_id,
+                        type_hint=v.get("type_hint"),
+                        is_dataframe=v.get("is_dataframe", False)
+                    )
+
+            return ExecutionResult(
+                status=status,
+                output=output,
+                error=error,
+                variables_created=created_vars
+            )
         
         except Exception as e:
-            log.error(f"Error executing R code: {e}")
-            return ExecutionResult(
-                status="error",
-                output="",
-                error=str(e),
-            )
-    
-    def _prepare_code(
-        self,
-        code: str,
-        parameters: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Prepare R code with parameter injection"""
-        param_code = ""
-        
-        # Inject parameters
-        if parameters:
-            for key, value in parameters.items():
-                if value is None:
-                    continue
-                if isinstance(value, str):
-                    param_code += f'{key} <- {json.dumps(value)}\n'
-                elif isinstance(value, bool):
-                    param_code += f'{key} <- {"TRUE" if value else "FALSE"}\n'
-                elif isinstance(value, (int, float)):
-                    param_code += f'{key} <- {value}\n'
-                elif isinstance(value, list):
-                    # Convert list to R vector
-                    r_values = ", ".join(
-                        json.dumps(v) if isinstance(v, str) else str(v)
-                        for v in value
-                    )
-                    param_code += f'{key} <- c({r_values})\n'
-        
-        # Inject workflow variables (only simple types)
-        workflow_vars = self.registry.get_all_workflow_vars()
-        for name, value in workflow_vars.items():
-            if isinstance(value, str):
-                param_code += f'{name} <- {json.dumps(value)}\n'
-            elif isinstance(value, bool):
-                param_code += f'{name} <- {"TRUE" if value else "FALSE"}\n'
-            elif isinstance(value, (int, float)):
-                param_code += f'{name} <- {value}\n'
-        
-        return param_code + code
+            return ExecutionResult(status="error", output="", error=f"Execution exception: {e}")
 
 
 class WorkerManager:
@@ -503,17 +514,6 @@ class WorkerManager:
     ) -> ExecutionResult:
         """
         Execute code in the appropriate worker.
-        
-        Args:
-            code: Source code to execute
-            language: 'python' or 'r'
-            node_id: ID of the executing node
-            parameters: Node parameters
-            timeout: Maximum execution time in seconds (default: 60)
-            memory_limit_mb: Maximum memory usage in MB for Python (default: 512)
-        
-        Returns:
-            ExecutionResult
         """
         if language == "python":
             return self._python_worker.execute(

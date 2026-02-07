@@ -14,32 +14,33 @@ const tool: ToolDefinition = {
     ],
     parameters: [],
     defaultCode: `# Variables Node
-# Receives a dataset and makes each column available as a separate variable
+# Receives a dataset (via Arrow IPC) and makes each column available as a separate variable
 
 if (exists("data") && is.data.frame(data)) {
     print(paste("Processing dataset with", ncol(data), "columns"))
     print(paste("Column names:", paste(names(data), collapse=", ")))
     
     # Each column is now accessible as data$columnName
-    # For example, if dataset has columns: age, height, weight
-    # You can access them as: data$age, data$height, data$weight
+    # With Arrow IPC, 'data' is a native R DataFrame (zero-copy from Python/Parquet)
     
     # List all variables
     for (col in names(data)) {
         print(paste("Variable:", col))
         print(paste("  Type:", class(data[[col]])))
-        print(paste("  Sample values:", paste(head(data[[col]], 3), collapse=", ")))
+        # Sample values
+        vals <- head(data[[col]], 3)
+        print(paste("  Sample:", paste(vals, collapse=", ")))
     }
     
     # Store column names for downstream nodes
     variables <- names(data)
-    print("Variables extracted successfully")
+    print("Variables extracted successfully via Arrow IPC")
 } else {
     print("Error: No valid dataset received. Please connect to a data source.")
 }
 `,
     language: 'r',
-    libraries: ['base'] // Base R data manipulation
+    libraries: ['base', 'arrow'] // Arrow is implicitly used by the bridge but good to document
 };
 
 export default tool;

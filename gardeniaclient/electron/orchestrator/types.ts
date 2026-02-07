@@ -145,6 +145,7 @@ export type OrchestratorEventType =
     | 'ready'
     | 'state_change'
     | 'output'
+    | 'node_variables'
     | 'execution_order'
     | 'execution_complete'
     | 'cancelled'
@@ -159,6 +160,7 @@ export interface OrchestratorEvent {
     error?: string;
     status?: string;
     variables?: Variable[];
+    createdVariables?: string[]; // Variables created by a specific node
     order?: string[];
     labels?: string[];
 }
