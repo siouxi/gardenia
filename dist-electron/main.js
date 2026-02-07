@@ -313,6 +313,15 @@ electron_1.app.on('ready', () => {
             return { status: 'error', error: String(error) };
         }
     }));
+    electron_1.ipcMain.handle('workflow:clear-variables', () => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            yield orchestrator.clearVariables();
+            return { status: 'success' };
+        }
+        catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    }));
     electron_1.ipcMain.handle('workflow:datasets', () => __awaiter(void 0, void 0, void 0, function* () {
         try {
             const datasets = yield orchestrator.listDatasets();

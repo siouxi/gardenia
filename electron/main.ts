@@ -342,6 +342,15 @@ app.on('ready', () => {
         }
     });
 
+    ipcMain.handle('workflow:clear-variables', async () => {
+        try {
+            await orchestrator.clearVariables();
+            return { status: 'success' };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
     ipcMain.handle('workflow:datasets', async () => {
         try {
             const datasets = await orchestrator.listDatasets();

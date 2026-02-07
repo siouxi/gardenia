@@ -227,6 +227,21 @@ export async function refreshVariables(): Promise<void> {
 }
 
 /**
+ * Clear all variables
+ */
+export async function clearVariables(): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api?.clearWorkflowVariables) return;
+
+    try {
+        await api.clearWorkflowVariables();
+        useWorkflowStore.getState().setVariables([]);
+    } catch (error) {
+        console.error('Failed to clear variables:', error);
+    }
+}
+
+/**
  * Refresh datasets from orchestrator
  */
 export async function refreshDatasets(): Promise<void> {

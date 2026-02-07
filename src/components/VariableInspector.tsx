@@ -7,8 +7,8 @@
  */
 
 import { useState } from 'react';
-import { useWorkflowStore, Variable, refreshVariables } from '../stores/workflowStore';
-import { ChevronDown, ChevronRight, Database, Code, Hash, ToggleLeft, RefreshCw } from 'lucide-react';
+import { useWorkflowStore, Variable, refreshVariables, clearVariables } from '../stores/workflowStore';
+import { ChevronDown, ChevronRight, Database, Code, Hash, ToggleLeft, RefreshCw, Trash2 } from 'lucide-react';
 
 interface VariableRowProps {
     variable: Variable;
@@ -112,6 +112,13 @@ export function VariableInspector() {
                 <span className="text-xs font-semibold text-[#bbb]">VARIABLES</span>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={clearVariables}
+                        className="text-[#666] hover:text-[#ccc] transition-colors"
+                        title="Clear variables"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                     <button
                         onClick={handleRefresh}
                         disabled={isRefreshing}

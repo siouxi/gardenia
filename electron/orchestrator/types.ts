@@ -118,6 +118,7 @@ export type OrchestratorMessageType =
     | 'execute'
     | 'cancel'
     | 'get_variables'
+    | 'clear_variables'
     | 'list_datasets'
     | 'ping';
 

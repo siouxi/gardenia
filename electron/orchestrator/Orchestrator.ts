@@ -308,6 +308,13 @@ export class WorkflowOrchestrator extends EventEmitter {
     }
 
     /**
+     * Clear all variables
+     */
+    async clearVariables(): Promise<void> {
+        await this.sendMessage({ type: 'clear_variables' });
+    }
+
+    /**
      * List stored datasets
      */
     async listDatasets(): Promise<DatasetMetadata[]> {

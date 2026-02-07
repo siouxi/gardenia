@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     executeWorkflow: (workflowData: any) => ipcRenderer.invoke('workflow:execute', workflowData),
     cancelWorkflow: () => ipcRenderer.invoke('workflow:cancel'),
     getWorkflowVariables: () => ipcRenderer.invoke('workflow:variables'),
+    clearWorkflowVariables: () => ipcRenderer.invoke('workflow:clear-variables'),
     getWorkflowDatasets: () => ipcRenderer.invoke('workflow:datasets'),
     getWorkflowStatus: () => ipcRenderer.invoke('workflow:status'),
 
