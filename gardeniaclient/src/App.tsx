@@ -19,6 +19,8 @@ import { validateWorkflowLibraries, installMissingLibraries } from './utils/Libr
 import { useWorkflowStore, initWorkflowEventListeners } from './stores/workflowStore';
 import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
 import { ProgressBar } from './components/ProgressBar';
+import { useUndoRedo } from './hooks/useUndoRedo';
+import { DataView } from './components/DataView';
 
 export interface NodeData {
     label: string;
@@ -106,8 +108,48 @@ const Flow = () => {
 
 
     const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
+    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-    // Attach global listeners (Moved here to access setNodes)
+    // Undo/Redo hook
+    const { pushSnapshot, undo, redo } = useUndoRedo();
+
+    // Undo/Redo handlers
+    const handleUndo = useCallback(() => {
+        const snapshot = undo(nodes, edges);
+        if (snapshot) {
+            setNodes(snapshot.nodes as AppNode[]);
+            setEdges(snapshot.edges);
+        }
+    }, [nodes, edges, undo, setNodes, setEdges]);
+
+    const handleRedo = useCallback(() => {
+        const snapshot = redo(nodes, edges);
+        if (snapshot) {
+            setNodes(snapshot.nodes as AppNode[]);
+            setEdges(snapshot.edges);
+        }
+    }, [nodes, edges, redo, setNodes, setEdges]);
+
+    // Undo/Redo keyboard shortcuts - always active
+    useEffect(() => {
+        const onUndoRedoKeyDown = (e: KeyboardEvent) => {
+            // Undo: Ctrl+Z (without shift)
+            if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                handleUndo();
+            }
+            // Redo: Ctrl+Shift+Z or Ctrl+Y
+            if ((e.ctrlKey && e.key === 'z' && e.shiftKey) || (e.ctrlKey && e.key === 'y')) {
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+
+        window.addEventListener('keydown', onUndoRedoKeyDown);
+        return () => window.removeEventListener('keydown', onUndoRedoKeyDown);
+    }, [handleUndo, handleRedo]);
+
+    // Attach global listeners for resize and node parameters
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Enter') stopResizing();
@@ -137,7 +179,7 @@ const Flow = () => {
 
         if (isResizingLeft || isResizingRight) {
             window.addEventListener('mousemove', onMouseMove);
-            window.addEventListener('click', stopResizing); // Click anywhere else stops it
+            window.addEventListener('click', stopResizing);
             window.addEventListener('keydown', onKeyDown);
         }
 
@@ -150,7 +192,6 @@ const Flow = () => {
             window.removeEventListener('node:update-parameter', onNodeUpdateParameter);
         };
     }, [isResizingLeft, isResizingRight, onMouseMove, stopResizing, setNodes]);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -199,8 +240,11 @@ const Flow = () => {
     }), []);
 
     const onConnect = useCallback(
-        (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-        [setEdges],
+        (params: Connection) => {
+            pushSnapshot(nodes, edges); // Save state before connecting
+            setEdges((eds) => addEdge(params, eds));
+        },
+        [setEdges, pushSnapshot, nodes, edges],
     );
 
     const onDragOver = useCallback((event: React.DragEvent) => {
@@ -245,9 +289,12 @@ const Flow = () => {
                 },
             };
 
+            // Save state before adding node
+            pushSnapshot(nodes, edges);
+
             setNodes((nds) => nds.concat(newNode));
         },
-        [screenToFlowPosition, setNodes],
+        [screenToFlowPosition, setNodes, pushSnapshot, nodes, edges],
     );
 
     const onNodeClick = useCallback((_: React.MouseEvent, node: AppNode) => {
@@ -808,9 +855,7 @@ const Flow = () => {
                     )}
 
                     {viewMode === 'data' && (
-                        <div className="flex-1 flex items-center justify-center text-[#444] text-sm font-mono">
-                            DATA VIEW - Coming Soon
-                        </div>
+                        <DataView />
                     )}
 
                     {viewMode === 'gallery' && (

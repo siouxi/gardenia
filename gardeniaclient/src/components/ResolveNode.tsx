@@ -1,3 +1,4 @@
+import React from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import {
     InputIcon,
@@ -15,6 +16,115 @@ const iconMap: Record<string, any> = {
     'Statistical Analysis': StatisticalAnalysisIcon,
     'Visualization': VisualizationIcon,
     'Utilities': UtilitiesIcon
+};
+
+// Helper component for individual parameters to handle local state
+const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialValue: any, nodeId: string }) => {
+    const [value, setValue] = React.useState(initialValue);
+
+    // Sync with external changes (e.g. undo/redo)
+    React.useEffect(() => {
+        setValue(initialValue);
+    }, [initialValue]);
+
+    const commitChange = (newValue: any) => {
+        const event = new CustomEvent('node:update-parameter', {
+            detail: { nodeId, paramName: param.name, value: newValue }
+        });
+        window.dispatchEvent(event);
+    };
+
+    // Text / String / Number / Select
+    if (param.type === 'string' || param.type === 'text' || param.type === 'number') {
+        return (
+            <div className="flex flex-col gap-1">
+                <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
+                <input
+                    type={param.type === 'number' ? 'number' : 'text'}
+                    className="bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    onBlur={() => {
+                        const val = param.type === 'number' ? parseFloat(value) : value;
+                        commitChange(val);
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            const val = param.type === 'number' ? parseFloat(value) : value;
+                            commitChange(val);
+                            (e.target as HTMLInputElement).blur();
+                        }
+                        e.stopPropagation(); // Prevent interfering with React Flow shortcuts
+                    }}
+                    placeholder={String(param.default || '')}
+                />
+            </div>
+        );
+    }
+
+    // Boolean
+    if (param.type === 'boolean') {
+        return (
+            <div className="flex items-center gap-2 mt-1">
+                <input
+                    type="checkbox"
+                    className="rounded border-[#404040] bg-[#2a2a2a] text-[#34d399] focus:ring-0 w-3 h-3"
+                    checked={Boolean(value)}
+                    onChange={(e) => {
+                        const newVal = e.target.checked;
+                        setValue(newVal);
+                        commitChange(newVal);
+                    }}
+                />
+                <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
+            </div>
+        );
+    }
+
+    // File / Save File
+    if (param.type === 'file' || param.type === 'save-file') {
+        const fileName = value ? String(value).split(/[/\\]/).pop() : (param.type === 'save-file' ? 'Save As...' : 'Select File');
+
+        const handleFileClick = async () => {
+            if ((window as any).electronAPI) {
+                let path;
+                if (param.type === 'save-file') {
+                    path = await (window as any).electronAPI.saveFileDialog({
+                        title: 'Save Output File',
+                        defaultPath: 'output.csv',
+                        filters: [
+                            { name: 'CSV Files', extensions: ['csv'] },
+                            { name: 'Parquet Files', extensions: ['parquet'] },
+                            { name: 'All Files', extensions: ['*'] }
+                        ]
+                    });
+                } else {
+                    path = await (window as any).electronAPI.openFileDialog();
+                }
+
+                if (path) {
+                    setValue(path);
+                    commitChange(path);
+                }
+            }
+        };
+
+        return (
+            <div className="flex flex-col gap-1">
+                <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
+                <button
+                    onClick={handleFileClick}
+                    className="bg-[#2a2a2a] hover:bg-[#333] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] flex items-center gap-2 transition-colors truncate w-full text-left"
+                    title={String(value)}
+                >
+                    <span className="truncate flex-1">{fileName}</span>
+                    <span className="text-[#666] text-[9px] shrink-0">{param.type === 'save-file' ? '💾' : '📂'}</span>
+                </button>
+            </div>
+        );
+    }
+
+    return null;
 };
 
 export const ResolveNode = ({ id, data, selected }: NodeProps) => {
@@ -104,55 +214,14 @@ export const ResolveNode = ({ id, data, selected }: NodeProps) => {
                 {/* Parameters (File Picker, etc.) */}
                 {toolData?.parameters && toolData.parameters.length > 0 && (
                     <div className="py-2 space-y-2">
-                        {toolData.parameters.map((param: any) => {
-                            if (param.type === 'file' || param.type === 'save-file') {
-                                const currentValue = (data.parameterValues as any)?.[param.name] || '';
-                                const fileName = currentValue ? currentValue.split(/[/\\]/).pop() : (param.type === 'save-file' ? 'Save As...' : 'Select File');
-
-                                const handleFileClick = async () => {
-                                    if ((window as any).electronAPI) {
-                                        let path;
-                                        if (param.type === 'save-file') {
-                                            path = await (window as any).electronAPI.saveFileDialog({
-                                                title: 'Save Output File',
-                                                defaultPath: 'output.csv',
-                                                filters: [
-                                                    { name: 'CSV Files', extensions: ['csv'] },
-                                                    { name: 'Parquet Files', extensions: ['parquet'] },
-                                                    { name: 'All Files', extensions: ['*'] }
-                                                ]
-                                            });
-                                        } else {
-                                            path = await (window as any).electronAPI.openFileDialog();
-                                        }
-
-                                        if (path) {
-                                            console.log('[ResolveNode] Selected file:', path);
-                                            const event = new CustomEvent('node:update-parameter', {
-                                                detail: { nodeId: id, paramName: param.name, value: path }
-                                            });
-                                            window.dispatchEvent(event);
-                                            console.log('[ResolveNode] Dispatched node:update-parameter event');
-                                        }
-                                    }
-                                };
-
-                                return (
-                                    <div key={param.name} className="flex flex-col gap-1">
-                                        <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
-                                        <button
-                                            onClick={handleFileClick}
-                                            className="bg-[#2a2a2a] hover:bg-[#333] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] flex items-center gap-2 transition-colors truncate w-full text-left"
-                                            title={currentValue}
-                                        >
-                                            <span className="truncate flex-1">{fileName}</span>
-                                            <span className="text-[#666] text-[9px] shrink-0">{param.type === 'save-file' ? '💾' : '📂'}</span>
-                                        </button>
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })}
+                        {toolData.parameters.map((param: any) => (
+                            <NodeParameter
+                                key={param.name}
+                                param={param}
+                                initialValue={(data.parameterValues as any)?.[param.name] ?? param.default ?? ''}
+                                nodeId={id}
+                            />
+                        ))}
                     </div>
                 )}
 

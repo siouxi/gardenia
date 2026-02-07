@@ -20,8 +20,15 @@ const tool: ToolDefinition = {
             required: true
         },
         {
+            name: 'variable_name',
+            type: 'string',
+            label: 'Dataset Name',
+            default: 'data',
+            required: true
+        },
+        {
             name: 'sep',
-            type: 'string', // Should be changed to 'text' if we want editable text, or 'select' for common separators
+            type: 'string',
             label: 'Separator',
             default: ',',
             required: false
@@ -39,15 +46,20 @@ import pandas as pd
 import os
 
 path = params.get('path', '')
+var_name = params.get('variable_name', 'data')
 sep = params.get('sep', ',')
 has_header = 0 if params.get('header', True) else None
 
 if path and os.path.exists(path):
-    print(f"Loading CSV from: {path}")
+    print(f"Loading CSV from: {path} into '{var_name}'")
     try:
-        data = pd.read_csv(path, sep=sep, header=has_header)
-        print(f"Loaded {len(data)} rows and {len(data.columns)} columns")
-        print(data.head())
+        _df = pd.read_csv(path, sep=sep, header=has_header)
+        print(f"Loaded {len(_df)} rows and {len(_df.columns)} columns")
+        print(_df.head())
+        
+        # Assign to dynamic variable name
+        globals()[var_name] = _df
+        
     except Exception as e:
         print(f"Error loading CSV: {e}")
         raise e

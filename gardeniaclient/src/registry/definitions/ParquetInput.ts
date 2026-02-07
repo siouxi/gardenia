@@ -18,6 +18,13 @@ const tool: ToolDefinition = {
             type: 'file',
             label: 'Parquet File',
             required: true
+        },
+        {
+            name: 'variable_name',
+            type: 'string',
+            label: 'Dataset Name',
+            default: 'data',
+            required: true
         }
     ],
     defaultCode: `# Parquet Input Node
@@ -25,19 +32,20 @@ import pandas as pd
 import os
 
 path = params.get('path', '')
+var_name = params.get('variable_name', 'data')
 
 if path and os.path.exists(path):
-    print(f"Loading Parquet file: {path}")
+    print(f"Loading Parquet file: {path} into '{var_name}'")
     try:
         # Load data
-        df = pd.read_parquet(path)
+        _df = pd.read_parquet(path)
         
         # Output info
-        print(f"Loaded {len(df)} rows and {len(df.columns)} columns")
-        print(df.head())
+        print(f"Loaded {len(_df)} rows and {len(_df.columns)} columns")
+        print(_df.head())
         
-        # Assign to output variable 'data'
-        data = df
+        # Assign to dynamic variable name
+        globals()[var_name] = _df
     except Exception as e:
         print(f"Error reading Parquet file: {e}")
         raise e

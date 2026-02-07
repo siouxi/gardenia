@@ -20,6 +20,13 @@ const tool: ToolDefinition = {
             required: true
         },
         {
+            name: 'variable_name',
+            type: 'string',
+            label: 'Dataset Name',
+            default: 'data',
+            required: true
+        },
+        {
             name: 'sheet_name',
             type: 'text',
             label: 'Sheet Name (Optional)',
@@ -32,20 +39,21 @@ import pandas as pd
 import os
 
 path = params.get('path', '')
+var_name = params.get('variable_name', 'data')
 sheet = params.get('sheet_name', 0)
 
 if path and os.path.exists(path):
-    print(f"Loading Excel file: {path}")
+    print(f"Loading Excel file: {path} into '{var_name}'")
     try:
         # Load data
-        df = pd.read_excel(path, sheet_name=sheet if sheet != '0' else 0)
+        _df = pd.read_excel(path, sheet_name=sheet if sheet != '0' else 0)
         
         # Output info
-        print(f"Loaded {len(df)} rows and {len(df.columns)} columns")
-        print(df.head())
+        print(f"Loaded {len(_df)} rows and {len(_df.columns)} columns")
+        print(_df.head())
         
-        # Assign to output variable 'data'
-        data = df
+        # Assign to dynamic variable name
+        globals()[var_name] = _df
     except Exception as e:
         print(f"Error reading Excel file: {e}")
         raise e
