@@ -13,11 +13,12 @@ export interface WorkflowSnapshot {
     nodes: Node[];
     edges: Edge[];
     timestamp: number;
+    description: string;
 }
 
 interface UseUndoRedoReturn {
     // Save current state before making changes
-    pushSnapshot: (nodes: Node[], edges: Edge[]) => void;
+    pushSnapshot: (nodes: Node[], edges: Edge[], description: string) => void;
 
     // Undo last change, returns the previous state
     undo: (currentNodes: Node[], currentEdges: Edge[]) => WorkflowSnapshot | null;
@@ -31,19 +32,22 @@ interface UseUndoRedoReturn {
 
     // History info
     historyLength: number;
+    past: WorkflowSnapshot[];
+    future: WorkflowSnapshot[];
 }
 
-const MAX_HISTORY = 10;
+const MAX_HISTORY = 20; // Increased history size
 
 export function useUndoRedo(): UseUndoRedoReturn {
     const [past, setPast] = useState<WorkflowSnapshot[]>([]);
     const [future, setFuture] = useState<WorkflowSnapshot[]>([]);
 
-    const pushSnapshot = useCallback((nodes: Node[], edges: Edge[]) => {
+    const pushSnapshot = useCallback((nodes: Node[], edges: Edge[], description: string = 'Unknown action') => {
         const snapshot: WorkflowSnapshot = {
             nodes: JSON.parse(JSON.stringify(nodes)), // Deep clone
             edges: JSON.parse(JSON.stringify(edges)),
             timestamp: Date.now(),
+            description,
         };
 
         setPast(prev => {
@@ -63,10 +67,12 @@ export function useUndoRedo(): UseUndoRedoReturn {
         const previousState = newPast.pop()!;
 
         // Save current state to future for redo
+        // We use the description of the *undone* action as the redo description
         const currentSnapshot: WorkflowSnapshot = {
             nodes: JSON.parse(JSON.stringify(currentNodes)),
             edges: JSON.parse(JSON.stringify(currentEdges)),
             timestamp: Date.now(),
+            description: previousState.description, // Re-use description for redo
         };
 
         setPast(newPast);
@@ -86,6 +92,7 @@ export function useUndoRedo(): UseUndoRedoReturn {
             nodes: JSON.parse(JSON.stringify(currentNodes)),
             edges: JSON.parse(JSON.stringify(currentEdges)),
             timestamp: Date.now(),
+            description: nextState.description,
         };
 
         setFuture(newFuture);
@@ -101,5 +108,7 @@ export function useUndoRedo(): UseUndoRedoReturn {
         canUndo: past.length > 0,
         canRedo: future.length > 0,
         historyLength: past.length,
+        past,
+        future
     };
 }

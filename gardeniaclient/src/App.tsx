@@ -111,7 +111,7 @@ const Flow = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
     // Undo/Redo hook
-    const { pushSnapshot, undo, redo } = useUndoRedo();
+    const { pushSnapshot, undo, redo, canUndo, canRedo, past } = useUndoRedo();
 
     // Undo/Redo handlers
     const handleUndo = useCallback(() => {
@@ -273,7 +273,7 @@ const Flow = () => {
 
     const onConnect = useCallback(
         (params: Connection) => {
-            pushSnapshot(nodes, edges); // Save state before connecting
+            pushSnapshot(nodes, edges, 'Connect nodes'); // Save state before connecting
             setEdges((eds) => addEdge(params, eds));
         },
         [setEdges, pushSnapshot, nodes, edges],
@@ -322,7 +322,7 @@ const Flow = () => {
             };
 
             // Save state before adding node
-            pushSnapshot(nodes, edges);
+            pushSnapshot(nodes, edges, `Add ${tool.name} node`);
 
             setNodes((nds) => nds.concat(newNode));
         },
@@ -706,6 +706,7 @@ const Flow = () => {
     }, [setNodes, setEdges]);
 
     const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+    const [isEditMenuOpen, setIsEditMenuOpen] = useState(false);
     const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
 
     return (
@@ -758,7 +759,64 @@ const Flow = () => {
                         </>
                     )}
                 </div>
-                <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">Edit</button>
+                <div className="relative">
+                    <button
+                        className={`px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors ${isFileMenuOpen ? 'bg-[#333]' : ''}`} // Logic for isEditMenuOpen handled below
+                        onClick={() => { setIsEditMenuOpen(!isEditMenuOpen); setIsFileMenuOpen(false); }}
+                    >
+                        Edit
+                    </button>
+                    {isEditMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsEditMenuOpen(false)} />
+                            <div className="absolute top-full left-0 mt-1 w-56 bg-[#2a2a2a] border border-[#333] rounded-md shadow-xl py-1 z-50 flex flex-col">
+                                <button
+                                    className={`px-4 py-2 text-xs text-left flex items-center justify-between hover:bg-[#3e3e3e] ${!canUndo ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    onClick={() => {
+                                        if (canUndo) handleUndo();
+                                        setIsEditMenuOpen(false);
+                                    }}
+                                    disabled={!canUndo}
+                                >
+                                    <span>Undo {canUndo && past.length > 0 ? `"${past[past.length - 1].description.slice(0, 15)}..."` : ''}</span>
+                                    <span className="text-gray-500 ml-4">Ctrl+Z</span>
+                                </button>
+                                <button
+                                    className={`px-4 py-2 text-xs text-left flex items-center justify-between hover:bg-[#3e3e3e] ${!canRedo ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    onClick={() => {
+                                        if (canRedo) handleRedo();
+                                        setIsEditMenuOpen(false);
+                                    }}
+                                    disabled={!canRedo}
+                                >
+                                    <span>Redo</span>
+                                    <span className="text-gray-500 ml-4">Ctrl+Y</span>
+                                </button>
+
+                                <div className="h-[1px] bg-[#333] my-1" />
+
+                                <div className="px-4 py-1 text-[10px] font-bold text-gray-500 uppercase">History</div>
+                                {past.length === 0 ? (
+                                    <div className="px-4 py-1 text-xs text-gray-600 italic">No changes yet</div>
+                                ) : (
+                                    <div className="flex flex-col max-h-40 overflow-y-auto">
+                                        {past.slice().reverse().slice(0, 5).map((snapshot, i) => (
+                                            <div key={snapshot.timestamp} className="px-4 py-1 text-xs text-gray-400 flex justify-between">
+                                                <span>{snapshot.description}</span>
+                                                <span className="text-[10px] text-gray-600">{i === 0 ? '(Latest)' : ''}</span>
+                                            </div>
+                                        ))}
+                                        {past.length > 5 && (
+                                            <div className="px-4 py-1 text-[10px] text-gray-600 italic text-center">
+                                                + {past.length - 5} more
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
                 <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">View</button>
                 <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">Help</button>
 

@@ -3,121 +3,154 @@
     {
       "name": "data",
       "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/data.parquet",
-      "num_rows": 891,
-      "num_columns": 12,
+      "num_rows": 3282,
+      "num_columns": 6,
       "columns": [
         {
-          "name": "PassengerId",
-          "type": "int64"
-        },
-        {
-          "name": "Survived",
-          "type": "int64"
-        },
-        {
-          "name": "Pclass",
-          "type": "int64"
-        },
-        {
-          "name": "Name",
+          "name": "Sales Person",
           "type": "string"
         },
         {
-          "name": "Sex",
+          "name": "Country",
           "type": "string"
         },
         {
-          "name": "Age",
-          "type": "double"
+          "name": "Product",
+          "type": "string"
         },
         {
-          "name": "SibSp",
+          "name": "Date",
+          "type": "string"
+        },
+        {
+          "name": "Amount",
+          "type": "string"
+        },
+        {
+          "name": "Boxes Shipped",
           "type": "int64"
-        },
-        {
-          "name": "Parch",
-          "type": "int64"
-        },
-        {
-          "name": "Ticket",
-          "type": "string"
-        },
-        {
-          "name": "Fare",
-          "type": "double"
-        },
-        {
-          "name": "Cabin",
-          "type": "string"
-        },
-        {
-          "name": "Embarked",
-          "type": "string"
         }
       ],
-      "size_bytes": 41833,
-      "created_at": "2026-02-07T16:57:46.799228",
-      "source_node_id": "parquet-input-1770498068700",
+      "size_bytes": 47788,
+      "created_at": "2026-02-07T17:11:01.167796",
+      "source_node_id": "csv-input-1770502228921",
       "preview": [
         {
-          "PassengerId": 1,
-          "Survived": 0,
-          "Pclass": 3,
-          "Name": "Braund, Mr. Owen Harris",
-          "Sex": "male",
-          "Age": 22.0,
-          "SibSp": 1,
-          "Parch": 0,
-          "Ticket": "A/5 21171",
-          "Fare": 7.25
+          "Sales Person": "Jehu Rudeforth",
+          "Country": "UK",
+          "Product": "Mint Chip Choco",
+          "Date": "04/01/2022",
+          "Amount": "$5,320.00",
+          "Boxes Shipped": 180
         },
         {
-          "PassengerId": 2,
-          "Survived": 1,
-          "Pclass": 1,
-          "Name": "Cumings, Mrs. John Bradley (Florence Briggs Thayer)",
-          "Sex": "female",
-          "Age": 38.0,
-          "SibSp": 1,
-          "Parch": 0,
-          "Ticket": "PC 17599",
-          "Fare": 71.2833
+          "Sales Person": "Van Tuxwell",
+          "Country": "India",
+          "Product": "85% Dark Bars",
+          "Date": "01/08/2022",
+          "Amount": "$7,896.00",
+          "Boxes Shipped": 94
         },
         {
-          "PassengerId": 3,
-          "Survived": 1,
-          "Pclass": 3,
-          "Name": "Heikkinen, Miss. Laina",
-          "Sex": "female",
-          "Age": 26.0,
-          "SibSp": 0,
-          "Parch": 0,
-          "Ticket": "STON/O2. 3101282",
-          "Fare": 7.925
+          "Sales Person": "Gigi Bohling",
+          "Country": "India",
+          "Product": "Peanut Butter Cubes",
+          "Date": "07/07/2022",
+          "Amount": "$4,501.00",
+          "Boxes Shipped": 91
         },
         {
-          "PassengerId": 4,
-          "Survived": 1,
-          "Pclass": 1,
-          "Name": "Futrelle, Mrs. Jacques Heath (Lily May Peel)",
-          "Sex": "female",
-          "Age": 35.0,
-          "SibSp": 1,
-          "Parch": 0,
-          "Ticket": "113803",
-          "Fare": 53.1
+          "Sales Person": "Jan Morforth",
+          "Country": "Australia",
+          "Product": "Peanut Butter Cubes",
+          "Date": "27/04/2022",
+          "Amount": "$12,726.00",
+          "Boxes Shipped": 342
         },
         {
-          "PassengerId": 5,
-          "Survived": 0,
-          "Pclass": 3,
-          "Name": "Allen, Mr. William Henry",
-          "Sex": "male",
-          "Age": 35.0,
-          "SibSp": 0,
-          "Parch": 0,
-          "Ticket": "373450",
-          "Fare": 8.05
+          "Sales Person": "Jehu Rudeforth",
+          "Country": "UK",
+          "Product": "Peanut Butter Cubes",
+          "Date": "24/02/2022",
+          "Amount": "$13,685.00",
+          "Boxes Shipped": 184
+        }
+      ]
+    },
+    {
+      "name": "daty",
+      "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/daty.parquet",
+      "num_rows": 3282,
+      "num_columns": 6,
+      "columns": [
+        {
+          "name": "Sales Person",
+          "type": "string"
+        },
+        {
+          "name": "Country",
+          "type": "string"
+        },
+        {
+          "name": "Product",
+          "type": "string"
+        },
+        {
+          "name": "Date",
+          "type": "string"
+        },
+        {
+          "name": "Amount",
+          "type": "string"
+        },
+        {
+          "name": "Boxes Shipped",
+          "type": "int64"
+        }
+      ],
+      "size_bytes": 47788,
+      "created_at": "2026-02-07T17:12:22.712166",
+      "source_node_id": "csv-input-1770502228921",
+      "preview": [
+        {
+          "Sales Person": "Jehu Rudeforth",
+          "Country": "UK",
+          "Product": "Mint Chip Choco",
+          "Date": "04/01/2022",
+          "Amount": "$5,320.00",
+          "Boxes Shipped": 180
+        },
+        {
+          "Sales Person": "Van Tuxwell",
+          "Country": "India",
+          "Product": "85% Dark Bars",
+          "Date": "01/08/2022",
+          "Amount": "$7,896.00",
+          "Boxes Shipped": 94
+        },
+        {
+          "Sales Person": "Gigi Bohling",
+          "Country": "India",
+          "Product": "Peanut Butter Cubes",
+          "Date": "07/07/2022",
+          "Amount": "$4,501.00",
+          "Boxes Shipped": 91
+        },
+        {
+          "Sales Person": "Jan Morforth",
+          "Country": "Australia",
+          "Product": "Peanut Butter Cubes",
+          "Date": "27/04/2022",
+          "Amount": "$12,726.00",
+          "Boxes Shipped": 342
+        },
+        {
+          "Sales Person": "Jehu Rudeforth",
+          "Country": "UK",
+          "Product": "Peanut Butter Cubes",
+          "Date": "24/02/2022",
+          "Amount": "$13,685.00",
+          "Boxes Shipped": 184
         }
       ]
     }
