@@ -1,0 +1,346 @@
+"""
+DAG Execution Engine
+====================
+
+Implements topological execution of workflow graphs with:
+- Kahn's algorithm for execution order
+- Parallel execution of independent nodes
+- Real-time state tracking and event emission
+"""
+
+from __future__ import annotations
+import asyncio
+import json
+import sys
+from collections import defaultdict
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+log = logging.getLogger(__name__)
+
+
+class ExecutionState(Enum):
+    """Node execution states"""
+    PENDING = "pending"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
+
+
+@dataclass
+class DAGNode:
+    """Represents a node in the execution DAG"""
+    id: str
+    label: str
+    tool_id: str
+    code: str = ""
+    language: str = "python"  # 'python' | 'r'
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    state: ExecutionState = ExecutionState.PENDING
+    output: str = ""
+    error: Optional[str] = None
+    timeout: int = 60  # Execution timeout in seconds
+    memory_limit: int = 512  # Memory limit in MB (Python only)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "tool_id": self.tool_id,
+            "code": self.code,
+            "language": self.language,
+            "parameters": self.parameters,
+            "state": self.state.value,
+            "output": self.output,
+            "error": self.error,
+            "timeout": self.timeout,
+            "memory_limit": self.memory_limit,
+        }
+
+
+@dataclass
+class DAGEdge:
+    """Represents an edge (connection) in the DAG"""
+    source: str
+    target: str
+    source_handle: Optional[str] = None
+    target_handle: Optional[str] = None
+
+
+class DAGExecutor:
+    """
+    Executes a workflow DAG with topological ordering.
+    
+    Features:
+    - Topological sort using Kahn's algorithm
+    - Async execution with parallel independent nodes
+    - State tracking and event callbacks
+    - Cancellation support
+    """
+    
+    def __init__(
+        self,
+        nodes: List[DAGNode],
+        edges: List[DAGEdge],
+        on_state_change: Optional[Callable[[str, ExecutionState], None]] = None,
+        on_output: Optional[Callable[[str, str], None]] = None,
+    ):
+        self.nodes: Dict[str, DAGNode] = {n.id: n for n in nodes}
+        self.edges: List[DAGEdge] = edges
+        self.on_state_change = on_state_change
+        self.on_output = on_output
+        
+        # Build adjacency lists
+        self._adjacency: Dict[str, List[str]] = defaultdict(list)  # node -> successors
+        self._reverse_adjacency: Dict[str, List[str]] = defaultdict(list)  # node -> predecessors
+        self._in_degree: Dict[str, int] = defaultdict(int)
+        
+        for edge in edges:
+            self._adjacency[edge.source].append(edge.target)
+            self._reverse_adjacency[edge.target].append(edge.source)
+            self._in_degree[edge.target] += 1
+        
+        # Ensure all nodes have an in_degree entry
+        for node_id in self.nodes:
+            if node_id not in self._in_degree:
+                self._in_degree[node_id] = 0
+        
+        self._cancelled = False
+        self._execute_node_fn: Optional[Callable] = None
+    
+    def get_topological_order(self) -> List[str]:
+        """
+        Compute execution order using Kahn's algorithm.
+        Returns list of node IDs in topological order.
+        """
+        in_degree = self._in_degree.copy()
+        queue: List[str] = []
+        order: List[str] = []
+        
+        # Start with nodes having 0 in-degree
+        for node_id, degree in in_degree.items():
+            if degree == 0:
+                queue.append(node_id)
+        
+        while queue:
+            node_id = queue.pop(0)
+            order.append(node_id)
+            
+            for successor in self._adjacency[node_id]:
+                in_degree[successor] -= 1
+                if in_degree[successor] == 0:
+                    queue.append(successor)
+        
+        # Check for cycles
+        if len(order) != len(self.nodes):
+            cycle_nodes = set(self.nodes.keys()) - set(order)
+            raise ValueError(f"Cycle detected in DAG involving nodes: {cycle_nodes}")
+        
+        return order
+    
+    def get_parallel_batches(self) -> List[List[str]]:
+        """
+        Group nodes into parallel execution batches.
+        Nodes in the same batch can run concurrently.
+        """
+        in_degree = self._in_degree.copy()
+        batches: List[List[str]] = []
+        remaining = set(self.nodes.keys())
+        
+        while remaining:
+            # Find all nodes with 0 in-degree
+            batch = [n for n in remaining if in_degree[n] == 0]
+            if not batch:
+                raise ValueError("Cycle detected in DAG")
+            
+            batches.append(batch)
+            
+            # Remove batch nodes and update in-degrees
+            for node_id in batch:
+                remaining.remove(node_id)
+                for successor in self._adjacency[node_id]:
+                    in_degree[successor] -= 1
+        
+        return batches
+    
+    def _update_state(self, node_id: str, state: ExecutionState) -> None:
+        """Update node state and emit callback"""
+        self.nodes[node_id].state = state
+        if self.on_state_change:
+            self.on_state_change(node_id, state)
+        
+        # Emit state change as JSON to stdout for IPC
+        msg = {
+            "type": "state_change",
+            "node_id": node_id,
+            "state": state.value
+        }
+        print(json.dumps(msg), flush=True)
+    
+    def _emit_output(self, node_id: str, output: str) -> None:
+        """Emit node output via callback"""
+        self.nodes[node_id].output = output
+        if self.on_output:
+            self.on_output(node_id, output)
+        
+        msg = {
+            "type": "output",
+            "node_id": node_id,
+            "output": output
+        }
+        print(json.dumps(msg), flush=True)
+    
+    async def execute(
+        self,
+        execute_node_fn: Callable[[DAGNode], Any],
+        parallel: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Execute the DAG.
+        
+        Args:
+            execute_node_fn: Async function to execute a single node
+            parallel: If True, run independent nodes in parallel
+        
+        Returns:
+            Dictionary with execution results
+        """
+        self._execute_node_fn = execute_node_fn
+        results: Dict[str, Any] = {}
+        
+        try:
+            if parallel:
+                batches = self.get_parallel_batches()
+                for batch in batches:
+                    if self._cancelled:
+                        break
+                    
+                    # Mark batch as queued
+                    for node_id in batch:
+                        self._update_state(node_id, ExecutionState.QUEUED)
+                    
+                    # Execute batch in parallel
+                    tasks = [self._execute_single(node_id) for node_id in batch]
+                    batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    for node_id, result in zip(batch, batch_results):
+                        if isinstance(result, Exception):
+                            results[node_id] = {"error": str(result)}
+                        else:
+                            results[node_id] = result
+            else:
+                # Sequential execution
+                order = self.get_topological_order()
+                for node_id in order:
+                    if self._cancelled:
+                        self._update_state(node_id, ExecutionState.CANCELLED)
+                        continue
+                    
+                    result = await self._execute_single(node_id)
+                    results[node_id] = result
+                    
+                    # Stop on error (unless it's START/END)
+                    node = self.nodes[node_id]
+                    if node.state == ExecutionState.ERROR:
+                        if node.tool_id not in ('flow-start', 'flow-end'):
+                            # Mark remaining nodes as skipped
+                            remaining_idx = order.index(node_id) + 1
+                            for remaining_id in order[remaining_idx:]:
+                                self._update_state(remaining_id, ExecutionState.SKIPPED)
+                            break
+        
+        except Exception as e:
+            log.error(f"DAG execution failed: {e}")
+            raise
+        
+        return results
+    
+    async def _execute_single(self, node_id: str) -> Dict[str, Any]:
+        """Execute a single node"""
+        node = self.nodes[node_id]
+        
+        # Skip START and END nodes
+        if node.tool_id == 'flow-start':
+            self._update_state(node_id, ExecutionState.SUCCESS)
+            self._emit_output(node_id, "Workflow started")
+            return {"status": "success", "output": "started"}
+        
+        if node.tool_id == 'flow-end':
+            self._update_state(node_id, ExecutionState.SUCCESS)
+            self._emit_output(node_id, "Workflow completed")
+            return {"status": "success", "output": "completed"}
+        
+        self._update_state(node_id, ExecutionState.RUNNING)
+        
+        try:
+            result = await self._execute_node_fn(node)
+            
+            status = result.get("status")
+            if status == "success":
+                self._update_state(node_id, ExecutionState.SUCCESS)
+                self._emit_output(node_id, result.get("output", ""))
+            elif status == "timeout":
+                self._update_state(node_id, ExecutionState.TIMEOUT)
+                node.error = result.get("error", "Execution timed out")
+                self._emit_output(node_id, f"Timeout: {node.error}")
+            else:
+                self._update_state(node_id, ExecutionState.ERROR)
+                node.error = result.get("error", "Unknown error")
+                self._emit_output(node_id, f"Error: {node.error}")
+            
+            return result
+        
+        except Exception as e:
+            self._update_state(node_id, ExecutionState.ERROR)
+            node.error = str(e)
+            self._emit_output(node_id, f"Exception: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    def cancel(self) -> None:
+        """Cancel ongoing execution"""
+        self._cancelled = True
+        for node_id, node in self.nodes.items():
+            if node.state in (ExecutionState.PENDING, ExecutionState.QUEUED):
+                self._update_state(node_id, ExecutionState.CANCELLED)
+    
+    def get_state_summary(self) -> Dict[str, Any]:
+        """Get summary of all node states"""
+        return {
+            node_id: {
+                "label": node.label,
+                "state": node.state.value,
+                "output": node.output,
+                "error": node.error,
+            }
+            for node_id, node in self.nodes.items()
+        }
+
+
+# CLI entry point for testing
+if __name__ == "__main__":
+    async def mock_execute(node: DAGNode):
+        await asyncio.sleep(0.1)  # Simulate work
+        return {"status": "success", "output": f"Executed {node.label}"}
+    
+    # Example DAG
+    nodes = [
+        DAGNode("1", "START", "flow-start"),
+        DAGNode("2", "Process", "python-node", code="print('hello')"),
+        DAGNode("3", "END", "flow-end"),
+    ]
+    edges = [
+        DAGEdge("1", "2"),
+        DAGEdge("2", "3"),
+    ]
+    
+    executor = DAGExecutor(nodes, edges)
+    print(f"Execution order: {executor.get_topological_order()}")
+    
+    asyncio.run(executor.execute(mock_execute))
