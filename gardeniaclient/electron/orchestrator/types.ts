@@ -134,12 +134,45 @@ export type OrchestratorMessageType =
     | 'get_variables'
     | 'clear_variables'
     | 'list_datasets'
-    | 'ping';
+    | 'preview_dataset';
 
-export interface OrchestratorMessage {
-    type: OrchestratorMessageType;
-    payload?: any;
+export interface ExecuteMessage {
+    type: 'execute';
+    payload: Workflow;
 }
+
+export interface CancelMessage {
+    type: 'cancel';
+}
+
+export interface GetVariablesMessage {
+    type: 'get_variables';
+}
+
+export interface ClearVariablesMessage {
+    type: 'clear_variables';
+}
+
+export interface ListDatasetsMessage {
+    type: 'list_datasets';
+}
+
+export interface PreviewDatasetMessage {
+    type: 'preview_dataset';
+    payload: {
+        name: string;
+        n_rows?: number;
+        include_stats?: boolean;
+    };
+}
+
+export type OrchestratorMessage =
+    | ExecuteMessage
+    | CancelMessage
+    | GetVariablesMessage
+    | ClearVariablesMessage
+    | ListDatasetsMessage
+    | PreviewDatasetMessage;
 
 export type OrchestratorEventType =
     | 'ready'

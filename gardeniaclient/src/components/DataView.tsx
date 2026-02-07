@@ -143,8 +143,12 @@ const EmptyState = () => (
     </div>
 );
 
+import { useState } from 'react';
+import { DatasetPreviewModal } from './DatasetPreviewModal';
+
 export const DataView = () => {
     const datasets = useWorkflowStore((state) => state.datasets);
+    const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
 
     // Debug logging
     console.log('DataView datasets:', datasets);
@@ -177,12 +181,16 @@ export const DataView = () => {
                     <DataCard
                         key={dataset.path || index}
                         dataset={dataset}
-                        onClick={() => {
-                            console.log('Open dataset:', dataset.name);
-                        }}
+                        onClick={() => setSelectedDataset(dataset)}
                     />
                 ))}
             </div>
+
+            {/* Preview Modal */}
+            <DatasetPreviewModal
+                dataset={selectedDataset}
+                onClose={() => setSelectedDataset(null)}
+            />
         </div>
     );
 };

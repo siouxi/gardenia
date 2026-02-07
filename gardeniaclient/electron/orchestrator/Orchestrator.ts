@@ -349,6 +349,16 @@ export class WorkflowOrchestrator extends EventEmitter {
     }
 
     /**
+     * Get a preview of a dataset
+     */
+    async previewDataset(name: string, nRows: number = 100): Promise<any> {
+        return await this.sendMessage({
+            type: 'preview_dataset',
+            payload: { name, n_rows: nRows, include_stats: true }
+        });
+    }
+
+    /**
      * Get current execution state
      */
     getExecutionState(): WorkflowExecutionState | null {

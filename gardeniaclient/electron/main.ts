@@ -371,6 +371,15 @@ app.on('ready', () => {
         }
     });
 
+    ipcMain.handle('workflow:preview-dataset', async (event, name: string) => {
+        try {
+            const result = await orchestrator.previewDataset(name, 100);
+            return result;
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
     ipcMain.handle('workflow:status', async () => {
         const state = orchestrator.getExecutionState();
         return {

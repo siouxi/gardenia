@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getWorkflowVariables: () => ipcRenderer.invoke('workflow:variables'),
     clearWorkflowVariables: () => ipcRenderer.invoke('workflow:clear-variables'),
     getWorkflowDatasets: () => ipcRenderer.invoke('workflow:datasets'),
+    previewDataset: (name: string) => ipcRenderer.invoke('workflow:preview-dataset', name),
     getWorkflowStatus: () => ipcRenderer.invoke('workflow:status'),
 
     // Workflow event listeners
