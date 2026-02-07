@@ -300,6 +300,25 @@ export class WorkflowOrchestrator extends EventEmitter {
     }
 
     /**
+     * Force stop the Python process (kills it immediately)
+     */
+    forceStop(): void {
+        if (this.pythonProcess) {
+            console.log('Force stopping orchestrator process');
+            this.pythonProcess.kill('SIGKILL');
+            this.pythonProcess = null;
+            this.isReady = false;
+
+            if (this.executionState) {
+                this.executionState.status = 'cancelled';
+                this.executionState.endTime = Date.now();
+            }
+
+            this.emit('forceStop');
+        }
+    }
+
+    /**
      * Get current variables from registry
      */
     async getVariables(): Promise<Variable[]> {

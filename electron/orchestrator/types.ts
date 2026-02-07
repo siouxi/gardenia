@@ -25,6 +25,8 @@ export interface NodeData {
     code?: string;
     language?: 'python' | 'r';
     executionState?: ExecutionState;
+    timeout?: number;        // Execution timeout in seconds (default: 60)
+    memoryLimit?: number;    // Memory limit in MB (Python only, default: 512)
 }
 
 export interface WorkflowEdge {
@@ -52,7 +54,8 @@ export type ExecutionState =
     | 'success'
     | 'error'
     | 'skipped'
-    | 'cancelled';
+    | 'cancelled'
+    | 'timeout';
 
 export interface ExecutionResult {
     status: 'success' | 'error';

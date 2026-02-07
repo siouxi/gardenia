@@ -16,7 +16,8 @@ export type ExecutionState =
     | 'success'
     | 'error'
     | 'skipped'
-    | 'cancelled';
+    | 'cancelled'
+    | 'timeout';
 
 export type WorkflowStatus = 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
 

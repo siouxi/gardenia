@@ -28,7 +28,9 @@ export interface NodeData {
     parameterValues?: Record<string, any>;
     code?: string; // Python/R code for execution
     language?: 'python' | 'r'; // Execution language
-    executionState?: 'pending' | 'queued' | 'running' | 'success' | 'error' | 'skipped' | 'cancelled'; // Visual feedback
+    executionState?: 'pending' | 'queued' | 'running' | 'success' | 'error' | 'skipped' | 'cancelled' | 'timeout'; // Visual feedback
+    timeout?: number;        // Execution timeout in seconds (default: 60)
+    memoryLimit?: number;    // Memory limit in MB (Python only, default: 512)
     [key: string]: any; // Index signature for ReactFlow compatibility
 }
 

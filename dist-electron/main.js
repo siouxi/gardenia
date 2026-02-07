@@ -304,6 +304,12 @@ electron_1.app.on('ready', () => {
         yield orchestrator.cancel();
         return { status: 'cancelled' };
     }));
+    electron_1.ipcMain.handle('workflow:force-stop', () => __awaiter(void 0, void 0, void 0, function* () {
+        orchestrator.forceStop();
+        // Restart orchestrator after force stop
+        yield orchestrator.start();
+        return { status: 'stopped' };
+    }));
     electron_1.ipcMain.handle('workflow:variables', () => __awaiter(void 0, void 0, void 0, function* () {
         try {
             const variables = yield orchestrator.getVariables();

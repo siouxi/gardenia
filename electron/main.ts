@@ -333,6 +333,13 @@ app.on('ready', () => {
         return { status: 'cancelled' };
     });
 
+    ipcMain.handle('workflow:force-stop', async () => {
+        orchestrator.forceStop();
+        // Restart orchestrator after force stop
+        await orchestrator.start();
+        return { status: 'stopped' };
+    });
+
     ipcMain.handle('workflow:variables', async () => {
         try {
             const variables = await orchestrator.getVariables();

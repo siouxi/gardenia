@@ -1,5 +1,5 @@
 import { ToolParameter } from '../types/ToolDefinition';
-import { Settings, Sliders, FileText, Type, Hash, List, Variable } from 'lucide-react';
+import { Settings, Sliders, FileText, Type, Hash, List, Variable, ChevronRight, Clock, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 import { VariableInspector } from './VariableInspector';
 
@@ -12,6 +12,7 @@ interface InspectorProps {
 
 export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorProps) => {
     const [chatInput, setChatInput] = useState('');
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([
         { role: 'assistant', content: 'Hello! I am Carmilla, your assistant. How can I help you with your workflow today?' }
     ]);
@@ -204,6 +205,63 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                                 {!(node.data.toolData?.parameters || []).length && (
                                     <div className="text-[10px] text-[#444] italic p-2 border border-[#222] border-dashed rounded text-center">
                                         No parameters available for this tool.
+                                    </div>
+                                )}
+
+                                {/* Advanced Settings */}
+                                {node.data.toolId !== 'flow-start' && node.data.toolId !== 'flow-end' && node.type !== 'postit' && (
+                                    <div className="space-y-2 pt-2 border-t border-[#222]">
+                                        <button
+                                            onClick={() => setShowAdvanced(!showAdvanced)}
+                                            className="text-[10px] uppercase font-bold text-[#555] flex items-center gap-1.5 hover:text-[#888] transition-colors w-full"
+                                        >
+                                            <ChevronRight size={10} className={`transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
+                                            Advanced Settings
+                                        </button>
+
+                                        {showAdvanced && (
+                                            <div className="bg-[#121212] rounded border border-[#333] p-3 space-y-3">
+                                                {/* Timeout (Python y R) */}
+                                                <div>
+                                                    <label className="text-[10px] text-[#666] flex items-center gap-1 mb-1">
+                                                        <Clock size={10} />
+                                                        Timeout (seconds)
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        max={3600}
+                                                        value={node.data.timeout ?? 60}
+                                                        onChange={(e) => {
+                                                            onUpdate(node.id, { ...node.data, timeout: Math.max(1, Number(e.target.value)) });
+                                                        }}
+                                                        className="w-full bg-[#1f1f23] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-[#d97706] outline-none"
+                                                    />
+                                                    <span className="text-[9px] text-[#444] mt-1 block">Max execution time before timeout</span>
+                                                </div>
+
+                                                {/* Memory Limit (Solo Python) */}
+                                                {node.data.language !== 'r' && (
+                                                    <div>
+                                                        <label className="text-[10px] text-[#666] flex items-center gap-1 mb-1">
+                                                            <HardDrive size={10} />
+                                                            Memory Limit (MB)
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            min={64}
+                                                            max={8192}
+                                                            value={node.data.memoryLimit ?? 512}
+                                                            onChange={(e) => {
+                                                                onUpdate(node.id, { ...node.data, memoryLimit: Math.max(64, Number(e.target.value)) });
+                                                            }}
+                                                            className="w-full bg-[#1f1f23] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-[#d97706] outline-none"
+                                                        />
+                                                        <span className="text-[9px] text-[#444] mt-1 block">Max memory usage (Python only)</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
