@@ -7,8 +7,8 @@
  */
 
 import { useState } from 'react';
-import { useWorkflowStore, Variable } from '../stores/workflowStore';
-import { ChevronDown, ChevronRight, Database, Code, Hash, ToggleLeft } from 'lucide-react';
+import { useWorkflowStore, Variable, refreshVariables } from '../stores/workflowStore';
+import { ChevronDown, ChevronRight, Database, Code, Hash, ToggleLeft, RefreshCw } from 'lucide-react';
 
 interface VariableRowProps {
     variable: Variable;
@@ -89,6 +89,16 @@ function VariableRow({ variable }: VariableRowProps) {
 export function VariableInspector() {
     const variables = useWorkflowStore((state) => state.variables);
     const [scopeFilter, setScopeFilter] = useState<'all' | 'workflow' | 'global'>('all');
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await refreshVariables();
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     const filteredVariables = variables.filter((v) => {
         if (scopeFilter === 'all') return true;
@@ -101,15 +111,26 @@ export function VariableInspector() {
             <div className="h-8 bg-[#2a2a2a] flex items-center justify-between px-3 border-b border-[#121212]">
                 <span className="text-xs font-semibold text-[#bbb]">VARIABLES</span>
 
-                <select
-                    value={scopeFilter}
-                    onChange={(e) => setScopeFilter(e.target.value as any)}
-                    className="text-xs bg-[#1f1f23] text-[#888] border-none rounded px-1.5 py-0.5"
-                >
-                    <option value="all">All</option>
-                    <option value="workflow">Workflow</option>
-                    <option value="global">Global</option>
-                </select>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleRefresh}
+                        disabled={isRefreshing}
+                        className="text-[#666] hover:text-[#ccc] transition-colors disabled:opacity-50"
+                        title="Refresh variables"
+                    >
+                        <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    </button>
+
+                    <select
+                        value={scopeFilter}
+                        onChange={(e) => setScopeFilter(e.target.value as any)}
+                        className="text-xs bg-[#1f1f23] text-[#888] border-none rounded px-1.5 py-0.5"
+                    >
+                        <option value="all">All</option>
+                        <option value="workflow">Workflow</option>
+                        <option value="global">Global</option>
+                    </select>
+                </div>
             </div>
 
             {/* Variable List */}

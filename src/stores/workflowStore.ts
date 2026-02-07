@@ -174,15 +174,21 @@ export function initWorkflowEventListeners(): void {
     });
 
     // Listen for workflow completion
-    api.onWorkflowComplete?.((result: any) => {
+    api.onWorkflowComplete?.(async (result: any) => {
         const newStatus = result.status === 'success' ? 'completed' : 'error';
         useWorkflowStore.getState().setStatus(newStatus);
         useWorkflowStore.getState().addLog(`Workflow ${newStatus}`);
 
-        // Update variables
+        // Update variables from result if provided
         if (result.variables) {
             useWorkflowStore.getState().setVariables(result.variables);
+        } else {
+            // Otherwise, actively fetch variables from orchestrator
+            await refreshVariables();
         }
+
+        // Also refresh datasets
+        await refreshDatasets();
     });
 
     // Check orchestrator status
@@ -191,4 +197,38 @@ export function initWorkflowEventListeners(): void {
     });
 
     console.log('Workflow event listeners initialized');
+}
+
+/**
+ * Refresh variables from orchestrator
+ */
+export async function refreshVariables(): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api?.getWorkflowVariables) return;
+
+    try {
+        const result = await api.getWorkflowVariables();
+        if (result.status === 'success' && result.variables) {
+            useWorkflowStore.getState().setVariables(result.variables);
+        }
+    } catch (error) {
+        console.error('Failed to fetch variables:', error);
+    }
+}
+
+/**
+ * Refresh datasets from orchestrator
+ */
+export async function refreshDatasets(): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api?.getWorkflowDatasets) return;
+
+    try {
+        const result = await api.getWorkflowDatasets();
+        if (result.status === 'success' && result.datasets) {
+            useWorkflowStore.getState().setDatasets(result.datasets);
+        }
+    } catch (error) {
+        console.error('Failed to fetch datasets:', error);
+    }
 }
