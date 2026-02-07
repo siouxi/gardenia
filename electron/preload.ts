@@ -3,6 +3,27 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
     runWorkflow: (workflowData: any) => ipcRenderer.invoke('run-workflow', workflowData),
 
+    // NEW: DAG-based Workflow Orchestrator APIs
+    executeWorkflow: (workflowData: any) => ipcRenderer.invoke('workflow:execute', workflowData),
+    cancelWorkflow: () => ipcRenderer.invoke('workflow:cancel'),
+    getWorkflowVariables: () => ipcRenderer.invoke('workflow:variables'),
+    getWorkflowDatasets: () => ipcRenderer.invoke('workflow:datasets'),
+    getWorkflowStatus: () => ipcRenderer.invoke('workflow:status'),
+
+    // Workflow event listeners
+    onNodeStateChange: (callback: (data: { nodeId: string; state: string }) => void) => {
+        ipcRenderer.on('workflow:node-state', (_, data) => callback(data));
+    },
+    onNodeOutput: (callback: (data: { nodeId: string; output: string }) => void) => {
+        ipcRenderer.on('workflow:node-output', (_, data) => callback(data));
+    },
+    onExecutionOrder: (callback: (data: { order: string[]; labels: string[] }) => void) => {
+        ipcRenderer.on('workflow:execution-order', (_, data) => callback(data));
+    },
+    onWorkflowComplete: (callback: (result: any) => void) => {
+        ipcRenderer.on('workflow:complete', (_, result) => callback(result));
+    },
+
     // R Session APIs
     startRSession: () => ipcRenderer.invoke('start-r-session'),
     executeRCommand: (command: string) => ipcRenderer.invoke('execute-r-command', command),
@@ -39,3 +60,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stopBashSession: () => ipcRenderer.invoke('stop-bash-session'),
     getBashSessionStatus: () => ipcRenderer.invoke('get-bash-session-status'),
 });
+

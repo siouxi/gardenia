@@ -3,6 +3,25 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     runWorkflow: (workflowData) => electron_1.ipcRenderer.invoke('run-workflow', workflowData),
+    // NEW: DAG-based Workflow Orchestrator APIs
+    executeWorkflow: (workflowData) => electron_1.ipcRenderer.invoke('workflow:execute', workflowData),
+    cancelWorkflow: () => electron_1.ipcRenderer.invoke('workflow:cancel'),
+    getWorkflowVariables: () => electron_1.ipcRenderer.invoke('workflow:variables'),
+    getWorkflowDatasets: () => electron_1.ipcRenderer.invoke('workflow:datasets'),
+    getWorkflowStatus: () => electron_1.ipcRenderer.invoke('workflow:status'),
+    // Workflow event listeners
+    onNodeStateChange: (callback) => {
+        electron_1.ipcRenderer.on('workflow:node-state', (_, data) => callback(data));
+    },
+    onNodeOutput: (callback) => {
+        electron_1.ipcRenderer.on('workflow:node-output', (_, data) => callback(data));
+    },
+    onExecutionOrder: (callback) => {
+        electron_1.ipcRenderer.on('workflow:execution-order', (_, data) => callback(data));
+    },
+    onWorkflowComplete: (callback) => {
+        electron_1.ipcRenderer.on('workflow:complete', (_, result) => callback(result));
+    },
     // R Session APIs
     startRSession: () => electron_1.ipcRenderer.invoke('start-r-session'),
     executeRCommand: (command) => electron_1.ipcRenderer.invoke('execute-r-command', command),

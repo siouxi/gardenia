@@ -16,6 +16,7 @@ import { PackageManager } from './components/PackageManager';
 import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
 import { validateWorkflowLibraries, installMissingLibraries } from './utils/LibraryValidator';
+import { useWorkflowStore, initWorkflowEventListeners } from './stores/workflowStore';
 import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
 
 export interface NodeData {
@@ -64,7 +65,7 @@ const Flow = () => {
     const [isResizingRight, setIsResizingRight] = useState(false);
 
     // Inspector State
-    const [inspectorTab, setInspectorTab] = useState<'inspector' | 'agent' | 'code'>('inspector'); // Keeping type but 'code' might be unused in inspector now
+    const [inspectorTab, setInspectorTab] = useState<'inspector' | 'agent' | 'code' | 'variables'>('inspector');
     const [viewMode, setViewMode] = useState<'workflow' | 'data' | 'gallery' | 'code' | 'report'>('workflow');
 
     // Resize Handlers
@@ -149,6 +150,17 @@ const Flow = () => {
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+    // Workflow orchestrator state (used for execution visualization)
+    // const workflowStatus = useWorkflowStore((state) => state.status);
+    // const updateNodeExecutionState = useWorkflowStore((state) => state.updateNodeState);
+    // const setWorkflowStatus = useWorkflowStore((state) => state.setStatus);
+    const addWorkflowLog = useWorkflowStore((state) => state.addLog);
+
+    // Initialize workflow event listeners on mount
+    useEffect(() => {
+        initWorkflowEventListeners();
+    }, []);
+
     // Console logging ref
     const logToConsoleRef = useRef<((log: string) => void) | null>(null);
 
@@ -157,6 +169,8 @@ const Flow = () => {
         if (logToConsoleRef.current) {
             logToConsoleRef.current(message);
         }
+        // Also add to workflow store
+        addWorkflowLog(message);
     };
 
     const nodeTypes = useMemo<NodeTypes>(() => ({

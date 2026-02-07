@@ -1,12 +1,13 @@
 import { ToolParameter } from '../types/ToolDefinition';
-import { Settings, Sliders, FileText, Type, Hash, List } from 'lucide-react';
+import { Settings, Sliders, FileText, Type, Hash, List, Variable } from 'lucide-react';
 import { useState } from 'react';
+import { VariableInspector } from './VariableInspector';
 
 interface InspectorProps {
     node: any; // Using any for now to avoid circular deps, but technically AppNode
     onUpdate: (nodeId: string, data: any) => void;
-    activeTab: 'inspector' | 'agent' | 'code';
-    onTabChange: (tab: 'inspector' | 'agent' | 'code') => void;
+    activeTab: 'inspector' | 'agent' | 'code' | 'variables';
+    onTabChange: (tab: 'inspector' | 'agent' | 'code' | 'variables') => void;
 }
 
 export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorProps) => {
@@ -34,6 +35,14 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                     className={`flex-1 h-full text-[10px] font-bold uppercase tracking-wide flex items-center justify-center transition-colors ${activeTab === 'inspector' ? 'bg-[#1f1f23] text-[#ddd] border-t-2 border-t-[#d97706]' : 'text-[#666] hover:bg-[#252529] hover:text-[#999]'}`}
                 >
                     Inspector
+                </button>
+                <div className="w-[1px] h-4 bg-[#111]" />
+                <button
+                    onClick={() => onTabChange('variables')}
+                    className={`flex-1 h-full text-[10px] font-bold uppercase tracking-wide flex items-center justify-center gap-1 transition-colors ${activeTab === 'variables' ? 'bg-[#1f1f23] text-[#ddd] border-t-2 border-t-[#34d399]' : 'text-[#666] hover:bg-[#252529] hover:text-[#999]'}`}
+                >
+                    <Variable size={10} />
+                    Variables
                 </button>
                 <div className="w-[1px] h-4 bg-[#111]" />
                 <button
@@ -245,6 +254,11 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                             </div>
                         </div>
                     </div>
+                )}
+
+                {/* VARIABLES TAB */}
+                {activeTab === 'variables' && (
+                    <VariableInspector />
                 )}
             </div>
         </div>

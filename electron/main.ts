@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
+import { getOrchestrator, WorkflowOrchestrator } from './orchestrator/Orchestrator';
 
 let mainWindow: BrowserWindow | null;
 let activePythonPath = 'python3'; // Default
@@ -283,6 +284,83 @@ app.on('ready', () => {
             console.error('Workflow execution error:', error);
             return { status: 'error', message: String(error) };
         }
+    });
+
+    // NEW: DAG-based workflow execution handlers
+    const orchestrator = getOrchestrator(activePythonPath);
+
+    // Start orchestrator when app is ready
+    orchestrator.start().then((ready) => {
+        if (ready) {
+            console.log('DAG Orchestrator started successfully');
+        } else {
+            console.warn('DAG Orchestrator failed to start');
+        }
+    });
+
+    // Forward orchestrator events to renderer
+    orchestrator.on('nodeStateChange', (nodeId: string, state: string) => {
+        mainWindow?.webContents.send('workflow:node-state', { nodeId, state });
+    });
+
+    orchestrator.on('nodeOutput', (nodeId: string, output: string) => {
+        mainWindow?.webContents.send('workflow:node-output', { nodeId, output });
+    });
+
+    orchestrator.on('executionOrder', (order: string[], labels: string[]) => {
+        mainWindow?.webContents.send('workflow:execution-order', { order, labels });
+    });
+
+    orchestrator.on('executionComplete', (result: any) => {
+        mainWindow?.webContents.send('workflow:complete', result);
+    });
+
+    // New IPC handler for DAG execution
+    ipcMain.handle('workflow:execute', async (event, workflowData) => {
+        console.log('DAG Execute workflow:', workflowData.nodes?.length, 'nodes');
+        try {
+            const result = await orchestrator.execute(workflowData);
+            return { status: 'success', result };
+        } catch (error) {
+            console.error('Workflow execution error:', error);
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('workflow:cancel', async () => {
+        await orchestrator.cancel();
+        return { status: 'cancelled' };
+    });
+
+    ipcMain.handle('workflow:variables', async () => {
+        try {
+            const variables = await orchestrator.getVariables();
+            return { status: 'success', variables };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('workflow:datasets', async () => {
+        try {
+            const datasets = await orchestrator.listDatasets();
+            return { status: 'success', datasets };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('workflow:status', async () => {
+        const state = orchestrator.getExecutionState();
+        return {
+            status: 'success',
+            ready: orchestrator.isOrchestratorReady(),
+            executionState: state ? {
+                workflowId: state.workflowId,
+                status: state.status,
+                executionOrder: state.executionOrder,
+            } : null,
+        };
     });
 
     // R Session IPC Handlers

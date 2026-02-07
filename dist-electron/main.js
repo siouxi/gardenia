@@ -16,6 +16,7 @@ const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
 const child_process_1 = require("child_process");
 const fs_1 = __importDefault(require("fs"));
+const Orchestrator_1 = require("./orchestrator/Orchestrator");
 let mainWindow;
 let activePythonPath = 'python3'; // Default
 // Determine if we are in development mode
@@ -260,6 +261,77 @@ electron_1.app.on('ready', () => {
             console.error('Workflow execution error:', error);
             return { status: 'error', message: String(error) };
         }
+    }));
+    // NEW: DAG-based workflow execution handlers
+    const orchestrator = (0, Orchestrator_1.getOrchestrator)(activePythonPath);
+    // Start orchestrator when app is ready
+    orchestrator.start().then((ready) => {
+        if (ready) {
+            console.log('DAG Orchestrator started successfully');
+        }
+        else {
+            console.warn('DAG Orchestrator failed to start');
+        }
+    });
+    // Forward orchestrator events to renderer
+    orchestrator.on('nodeStateChange', (nodeId, state) => {
+        mainWindow === null || mainWindow === void 0 ? void 0 : mainWindow.webContents.send('workflow:node-state', { nodeId, state });
+    });
+    orchestrator.on('nodeOutput', (nodeId, output) => {
+        mainWindow === null || mainWindow === void 0 ? void 0 : mainWindow.webContents.send('workflow:node-output', { nodeId, output });
+    });
+    orchestrator.on('executionOrder', (order, labels) => {
+        mainWindow === null || mainWindow === void 0 ? void 0 : mainWindow.webContents.send('workflow:execution-order', { order, labels });
+    });
+    orchestrator.on('executionComplete', (result) => {
+        mainWindow === null || mainWindow === void 0 ? void 0 : mainWindow.webContents.send('workflow:complete', result);
+    });
+    // New IPC handler for DAG execution
+    electron_1.ipcMain.handle('workflow:execute', (event, workflowData) => __awaiter(void 0, void 0, void 0, function* () {
+        var _a;
+        console.log('DAG Execute workflow:', (_a = workflowData.nodes) === null || _a === void 0 ? void 0 : _a.length, 'nodes');
+        try {
+            const result = yield orchestrator.execute(workflowData);
+            return { status: 'success', result };
+        }
+        catch (error) {
+            console.error('Workflow execution error:', error);
+            return { status: 'error', error: String(error) };
+        }
+    }));
+    electron_1.ipcMain.handle('workflow:cancel', () => __awaiter(void 0, void 0, void 0, function* () {
+        yield orchestrator.cancel();
+        return { status: 'cancelled' };
+    }));
+    electron_1.ipcMain.handle('workflow:variables', () => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            const variables = yield orchestrator.getVariables();
+            return { status: 'success', variables };
+        }
+        catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    }));
+    electron_1.ipcMain.handle('workflow:datasets', () => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            const datasets = yield orchestrator.listDatasets();
+            return { status: 'success', datasets };
+        }
+        catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    }));
+    electron_1.ipcMain.handle('workflow:status', () => __awaiter(void 0, void 0, void 0, function* () {
+        const state = orchestrator.getExecutionState();
+        return {
+            status: 'success',
+            ready: orchestrator.isOrchestratorReady(),
+            executionState: state ? {
+                workflowId: state.workflowId,
+                status: state.status,
+                executionOrder: state.executionOrder,
+            } : null,
+        };
     }));
     // R Session IPC Handlers
     electron_1.ipcMain.handle('start-r-session', () => __awaiter(void 0, void 0, void 0, function* () {
