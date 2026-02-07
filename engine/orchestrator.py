@@ -246,6 +246,10 @@ class Orchestrator:
         elif msg_type == "list_datasets":
             return {"status": "success", "datasets": self.list_datasets()}
         
+        elif msg_type == "clear_datasets":
+            self.storage.clear_all()
+            return {"status": "success", "datasets": []}
+        
         elif msg_type == "preview_dataset":
             name = payload.get("name")
             n_rows = payload.get("n_rows", 10)

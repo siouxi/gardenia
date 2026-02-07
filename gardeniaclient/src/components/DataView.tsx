@@ -145,13 +145,36 @@ const EmptyState = () => (
 
 import { useState } from 'react';
 import { DatasetPreviewModal } from './DatasetPreviewModal';
+import { Trash2 } from 'lucide-react';
 
 export const DataView = () => {
     const datasets = useWorkflowStore((state) => state.datasets);
+    const setDatasets = useWorkflowStore((state) => state.setDatasets);
     const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
+    const [clearing, setClearing] = useState(false);
 
     // Debug logging
     console.log('DataView datasets:', datasets);
+
+    const handleClearAll = async () => {
+        if (!confirm('Are you sure you want to delete ALL datasets? This cannot be undone.')) return;
+
+        setClearing(true);
+        try {
+            // @ts-ignore
+            await window.electronAPI.clearDatasets();
+            // Refresh list (should be empty)
+            // @ts-ignore
+            const result = await window.electronAPI.getWorkflowDatasets();
+            if (result.status === 'success') {
+                setDatasets(result.datasets);
+            }
+        } catch (error) {
+            console.error('Failed to clear datasets:', error);
+        } finally {
+            setClearing(false);
+        }
+    };
 
     if (datasets.length === 0) {
         return <EmptyState />;
@@ -171,6 +194,14 @@ export const DataView = () => {
                 </div>
 
                 <div className="flex gap-2">
+                    <button
+                        onClick={handleClearAll}
+                        disabled={clearing}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-[#2a2a2a] hover:bg-red-900/30 text-xs font-medium text-gray-400 hover:text-red-400 border border-[#333] hover:border-red-900/50 rounded-lg transition-all disabled:opacity-50"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {clearing ? 'Clearing...' : 'Clear All'}
+                    </button>
                     {/* Filter/Sort controls could go here */}
                 </div>
             </div>

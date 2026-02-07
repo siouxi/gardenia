@@ -134,6 +134,7 @@ export type OrchestratorMessageType =
     | 'get_variables'
     | 'clear_variables'
     | 'list_datasets'
+    | 'clear_datasets'
     | 'preview_dataset';
 
 export interface ExecuteMessage {
@@ -157,6 +158,10 @@ export interface ListDatasetsMessage {
     type: 'list_datasets';
 }
 
+export interface ClearDatasetsMessage {
+    type: 'clear_datasets';
+}
+
 export interface PreviewDatasetMessage {
     type: 'preview_dataset';
     payload: {
@@ -172,6 +177,7 @@ export type OrchestratorMessage =
     | GetVariablesMessage
     | ClearVariablesMessage
     | ListDatasetsMessage
+    | ClearDatasetsMessage
     | PreviewDatasetMessage;
 
 export type OrchestratorEventType =

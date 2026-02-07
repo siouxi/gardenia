@@ -348,6 +348,10 @@ export class WorkflowOrchestrator extends EventEmitter {
         return (response as any).datasets || [];
     }
 
+    async clearDatasets(): Promise<any> {
+        return await this.sendMessage({ type: 'clear_datasets' });
+    }
+
     /**
      * Get a preview of a dataset
      */

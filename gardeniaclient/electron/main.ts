@@ -371,6 +371,14 @@ app.on('ready', () => {
         }
     });
 
+    ipcMain.handle('workflow:clear-datasets', async () => {
+        try {
+            return await orchestrator.clearDatasets();
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
     ipcMain.handle('workflow:preview-dataset', async (event, name: string) => {
         try {
             const result = await orchestrator.previewDataset(name, 100);

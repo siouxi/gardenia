@@ -333,7 +333,16 @@ class ArrowStorage:
             return True
         except Exception as e:
             log.error(f"Failed to delete dataset '{name}': {e}")
+            log.error(f"Failed to delete dataset '{name}': {e}")
             return False
+    
+    def clear_all(self) -> bool:
+        """Delete all datasets"""
+        success = True
+        for name in list(self._datasets.keys()):
+            if not self.delete(name):
+                success = False
+        return success
     
     def get_metadata(self, name: str) -> Optional[DatasetMetadata]:
         """Get metadata for a dataset"""
