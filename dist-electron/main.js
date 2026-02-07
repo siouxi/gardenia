@@ -108,7 +108,8 @@ class RSessionManager {
                         resolve({
                             status: res.status === 'success' ? 'success' : 'error',
                             output: res.output || '',
-                            error: res.error || (res.status === 'error' ? res.output : undefined)
+                            error: res.error || (res.status === 'error' ? res.output : undefined),
+                            variables: res.variables || []
                         });
                     }
                     catch (e) {
@@ -340,6 +341,19 @@ electron_1.app.on('ready', () => {
     }));
     electron_1.ipcMain.handle('execute-r-command', (event, command) => __awaiter(void 0, void 0, void 0, function* () {
         const result = yield rSession.executeCommand(command);
+        // Emit R variables to renderer for workflowStore
+        if (result.variables && Array.isArray(result.variables)) {
+            mainWindow === null || mainWindow === void 0 ? void 0 : mainWindow.webContents.send('r-variables-update', {
+                variables: result.variables.map((v) => ({
+                    name: v.name,
+                    value: v.value,
+                    scope: 'workflow',
+                    type_hint: v.type_hint || 'any',
+                    is_dataframe: v.is_dataframe || false,
+                    source: 'R'
+                }))
+            });
+        }
         return result;
     }));
     electron_1.ipcMain.handle('stop-r-session', () => __awaiter(void 0, void 0, void 0, function* () {

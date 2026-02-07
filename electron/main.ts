@@ -79,7 +79,7 @@ class RSessionManager {
         });
     }
 
-    executeCommand(command: string): Promise<{ status: 'success' | 'error'; output: string; error?: string }> {
+    executeCommand(command: string): Promise<{ status: 'success' | 'error'; output: string; error?: string; variables?: any[] }> {
         return new Promise((resolve, reject) => {
             if (!this.rProcess) {
                 resolve({ status: 'error', output: '', error: 'R session not started' });
@@ -106,7 +106,8 @@ class RSessionManager {
                         resolve({
                             status: res.status === 'success' ? 'success' : 'error',
                             output: res.output || '',
-                            error: res.error || (res.status === 'error' ? res.output : undefined)
+                            error: res.error || (res.status === 'error' ? res.output : undefined),
+                            variables: res.variables || []
                         });
                     } catch (e) {
                         console.error('Failed to parse R response:', responseLine);
@@ -371,6 +372,21 @@ app.on('ready', () => {
 
     ipcMain.handle('execute-r-command', async (event, command: string) => {
         const result = await rSession.executeCommand(command);
+
+        // Emit R variables to renderer for workflowStore
+        if (result.variables && Array.isArray(result.variables)) {
+            mainWindow?.webContents.send('r-variables-update', {
+                variables: result.variables.map((v: any) => ({
+                    name: v.name,
+                    value: v.value,
+                    scope: 'workflow',
+                    type_hint: v.type_hint || 'any',
+                    is_dataframe: v.is_dataframe || false,
+                    source: 'R'
+                }))
+            });
+        }
+
         return result;
     });
 

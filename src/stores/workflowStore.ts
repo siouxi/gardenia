@@ -36,6 +36,7 @@ export interface Variable {
     type_hint: string;
     node_id?: string;
     is_dataframe: boolean;
+    source?: 'Python' | 'R';  // Track variable origin
 }
 
 export interface Dataset {
@@ -194,6 +195,15 @@ export function initWorkflowEventListeners(): void {
     // Check orchestrator status
     api.getWorkflowStatus?.().then((result: any) => {
         useWorkflowStore.getState().setOrchestratorReady(result.ready);
+    });
+
+    // Listen for R variables updates
+    api.onRVariablesUpdate?.((data: { variables: any[] }) => {
+        const currentVars = useWorkflowStore.getState().variables;
+        // Merge R variables (replace existing by name, add new)
+        const rVarNames = new Set(data.variables.map(v => v.name));
+        const nonRVars = currentVars.filter(v => !rVarNames.has(v.name) || v.source !== 'R');
+        useWorkflowStore.getState().setVariables([...nonRVars, ...data.variables]);
     });
 
     console.log('Workflow event listeners initialized');

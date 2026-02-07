@@ -22,6 +22,10 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     onWorkflowComplete: (callback) => {
         electron_1.ipcRenderer.on('workflow:complete', (_, result) => callback(result));
     },
+    // R variables update listener
+    onRVariablesUpdate: (callback) => {
+        electron_1.ipcRenderer.on('r-variables-update', (_, data) => callback(data));
+    },
     // R Session APIs
     startRSession: () => electron_1.ipcRenderer.invoke('start-r-session'),
     executeRCommand: (command) => electron_1.ipcRenderer.invoke('execute-r-command', command),
