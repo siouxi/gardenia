@@ -25,39 +25,36 @@ process_command <- function(command_json, env) {
         {
             request <- fromJSON(command_json)
 
-            # 1. Load variables from Input IPC file (if provided)
-            if (!is.null(request$input_ipc) && file.exists(request$input_ipc)) {
-                tryCatch(
-                    {
-                        # Read all columns from the Arrow file into a table
-                        table <- read_ipc_file(request$input_ipc)
+            # 1. Load variables from Input IPC files (if provided)
+            if (!is.null(request$input_ipcs)) {
+                for (ipc_info in request$input_ipcs) {
+                    if (file.exists(ipc_info$path)) {
+                        tryCatch(
+                            {
+                                # Read all columns from the Arrow file into a table
+                                table <- read_ipc_file(ipc_info$path)
 
-                        # Convert to data frame (zero-copy where possible)
-                        df <- as.data.frame(table)
+                                # Convert to data frame (zero-copy where possible)
+                                df <- as.data.frame(table)
+                                df_name <- ipc_info$name
 
-                        # Assign each column as a variable in the environment
-                        for (col_name in names(df)) {
-                            # Assign to global scope for easy access
-                            assign(col_name, df[[col_name]], envir = env)
+                                # Assign the FULL dataframe under its original name
+                                assign(df_name, df, envir = env)
 
-                            # ALSO assign to 'inputs' list if it exists (created by worker_manager)
-                            # This allows unified access via inputs$data, etc.
-                            if (exists("inputs", envir = env)) {
-                                # We need to assign into the list 'inputs' in 'env'
-                                # R environments are tricky with nested assignment via assign()
-                                # Easiest is to use eval
-                                eval(parse(text = paste0("inputs[['", col_name, "']] <- ", col_name)), envir = env)
-                            } else {
-                                # Create inputs if missing
-                                assign("inputs", list(), envir = env)
-                                eval(parse(text = paste0("inputs[['", col_name, "']] <- ", col_name)), envir = env)
+                                # ALSO assign to 'inputs' list if it exists
+                                if (exists("inputs", envir = env)) {
+                                    eval(parse(text = paste0("inputs[['", df_name, "']] <- ", df_name)), envir = env)
+                                } else {
+                                    assign("inputs", list(), envir = env)
+                                    eval(parse(text = paste0("inputs[['", df_name, "']] <- ", df_name)), envir = env)
+                                }
+                            },
+                            error = function(e) {
+                                warning(paste("Failed to load input IPC", ipc_info$name, ":", e$message))
                             }
-                        }
-                    },
-                    error = function(e) {
-                        warning(paste("Failed to load input IPC:", e$message))
+                        )
                     }
-                )
+                }
             }
 
             # 2. Execute Code and Capture Output
@@ -65,13 +62,16 @@ process_command <- function(command_json, env) {
             error_msg <- NULL
             status <- "success"
 
+            # Create user_env for isolation to prevent re-serializing input variables!
+            user_env <- new.env(parent = env)
+
             # Capture stdout/stderr
             # Note: worker_manager injects 'inputs' creation code before user code
             output_text <- capture.output(
                 {
                     tryCatch(
                         {
-                            eval(parse(text = request$code), envir = env)
+                            eval(parse(text = request$code), envir = user_env)
                         },
                         error = function(e) {
                             status <<- "error"
@@ -92,7 +92,7 @@ process_command <- function(command_json, env) {
             if (status == "success") {
                 tryCatch(
                     {
-                        vars <- ls(envir = env, all.names = FALSE)
+                        vars <- ls(envir = user_env, all.names = FALSE)
 
                         # Create output directory for IPC files if needed
                         output_dir <- if (!is.null(request$output_dir)) request$output_dir else tempdir()
@@ -102,7 +102,7 @@ process_command <- function(command_json, env) {
                             # Skip 'inputs' variable itself to avoid circularity/redundancy
                             if (var_name == "inputs") next
 
-                            val <- get(var_name, envir = env)
+                            val <- get(var_name, envir = user_env)
 
                             # Basic metadata
                             val_meta <- list(

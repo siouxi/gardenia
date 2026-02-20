@@ -168,6 +168,13 @@ export function initWorkflowEventListeners(onLog?: (message: string) => void): v
         onLog?.(msg);
     });
 
+    // Listen for node variables to update UI ports dynamically, but also fetch the actual data
+    api.onNodeVariables?.(async () => {
+        // We will trigger a variable refresh right now to see them live in the sidebar
+        await refreshVariables();
+        await refreshDatasets();
+    });
+
     // Listen for node output
     api.onNodeOutput?.((data: { nodeId: string; output: string }) => {
         useWorkflowStore.getState().appendNodeOutput(data.nodeId, data.output);

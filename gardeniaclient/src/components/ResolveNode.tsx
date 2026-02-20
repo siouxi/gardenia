@@ -34,7 +34,7 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         window.dispatchEvent(event);
     };
 
-    // Text / String / Number / Select
+    // Text / String / Number
     if (param.type === 'string' || param.type === 'text' || param.type === 'number') {
         return (
             <div className="flex flex-col gap-1">
@@ -62,8 +62,52 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         );
     }
 
-    // Boolean
-    if (param.type === 'boolean') {
+    // Select / Dropdown
+    if (param.type === 'select') {
+        return (
+            <div className="flex flex-col gap-1">
+                <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
+                <select
+                    className="bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
+                    value={value}
+                    onChange={(e) => {
+                        setValue(e.target.value);
+                        commitChange(e.target.value);
+                    }}
+                >
+                    {param.options?.map((opt: string) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                </select>
+            </div>
+        );
+    }
+
+    // Slider
+    if (param.type === 'slider') {
+        return (
+            <div className="flex flex-col gap-1">
+                <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
+                    <span className="text-[9px] text-[#34d399]">{value}</span>
+                </div>
+                <input
+                    type="range"
+                    min={param.min ?? 0}
+                    max={param.max ?? 100}
+                    step={param.step ?? 1}
+                    className="w-full h-1 bg-[#404040] rounded-lg appearance-none cursor-pointer accent-[#34d399]"
+                    value={value}
+                    onChange={(e) => setValue(parseFloat(e.target.value))}
+                    onMouseUp={() => commitChange(parseFloat(value))}
+                    onTouchEnd={() => commitChange(parseFloat(value))}
+                />
+            </div>
+        );
+    }
+
+    // Boolean / Toggle
+    if (param.type === 'boolean' || param.type === 'toggle') {
         return (
             <div className="flex items-center gap-2 mt-1">
                 <input
@@ -127,7 +171,7 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
     return null;
 };
 
-export const ResolveNode = ({ id, data, selected }: NodeProps) => {
+export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
     const Icon = iconMap[String(data.category)] || iconMap['QC'];
     const toolData = data.toolData as any;
 
@@ -255,4 +299,4 @@ export const ResolveNode = ({ id, data, selected }: NodeProps) => {
             </div>
         </div>
     );
-};
+});

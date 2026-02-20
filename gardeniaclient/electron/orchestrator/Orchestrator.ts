@@ -24,14 +24,17 @@ import {
     DatasetMetadata,
 } from './types';
 
+import http from 'http';
+
 export class WorkflowOrchestrator extends EventEmitter {
     private pythonProcess: ChildProcess | null = null;
-    private pendingData: string = '';
     private isReady: boolean = false;
     private executionState: WorkflowExecutionState | null = null;
-    private messageQueue: Array<{ message: OrchestratorMessage; resolve: Function; reject: Function }> = [];
     private currentPromise: { resolve: Function; reject: Function } | null = null;
     private activePythonPath: string;
+    private serverPort: number | null = null;
+    private sseRequest: http.ClientRequest | null = null;
+    private connectionAttempts: number = 0;
 
     constructor(pythonPath: string = 'python3') {
         super();
@@ -42,7 +45,7 @@ export class WorkflowOrchestrator extends EventEmitter {
      * Start the Python orchestrator process
      */
     async start(): Promise<boolean> {
-        if (this.pythonProcess) {
+        if (this.pythonProcess && this.isReady) {
             return true;
         }
 
@@ -62,14 +65,34 @@ export class WorkflowOrchestrator extends EventEmitter {
                     stdio: ['pipe', 'pipe', 'pipe'],
                 });
 
-                // Handle stdout (protocol messages)
+                let buffer = '';
+                // Handle stdout to catch the server_started message
                 this.pythonProcess.stdout!.on('data', (chunk: Buffer) => {
-                    this.handleData(chunk.toString());
+                    buffer += chunk.toString();
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line
+
+                    for (const line of lines) {
+                        try {
+                            const msg = JSON.parse(line.trim());
+                            if (msg.type === 'server_started' && msg.port) {
+                                this.serverPort = msg.port;
+                                console.log(`[Orchestrator] HTTP Server started on port ${this.serverPort}`);
+                                this.connectSSE();
+                            } else {
+                                // Forward other standard prints to console
+                                console.log(`[Orchestrator Log]`, line.trim());
+                            }
+                        } catch (e) {
+                            // Not JSON, just standard print
+                            console.log(`[Orchestrator Log]`, line.trim());
+                        }
+                    }
                 });
 
                 // Handle stderr (logs)
                 this.pythonProcess.stderr!.on('data', (chunk: Buffer) => {
-                    console.log('[Orchestrator]', chunk.toString().trim());
+                    console.error('[Orchestrator Error]', chunk.toString().trim());
                 });
 
                 this.pythonProcess.on('error', (err) => {
@@ -80,18 +103,18 @@ export class WorkflowOrchestrator extends EventEmitter {
 
                 this.pythonProcess.on('close', (code) => {
                     console.log('Orchestrator process exited with code:', code);
-                    this.pythonProcess = null;
-                    this.isReady = false;
+                    this.cleanup();
                     this.emit('close', code);
                 });
 
-                // Wait for ready signal
+                // Wait for ready signal via SSE
                 const readyTimeout = setTimeout(() => {
                     if (!this.isReady) {
                         console.error('Orchestrator failed to start (timeout)');
+                        this.cleanup();
                         resolve(false);
                     }
-                }, 5000);
+                }, 10000);
 
                 this.once('ready', () => {
                     clearTimeout(readyTimeout);
@@ -105,6 +128,81 @@ export class WorkflowOrchestrator extends EventEmitter {
                 resolve(false);
             }
         });
+    }
+
+    private connectSSE(): void {
+        if (!this.serverPort) return;
+
+        const options = {
+            hostname: '127.0.0.1',
+            port: this.serverPort,
+            path: '/events',
+            method: 'GET',
+            headers: {
+                'Accept': 'text/event-stream'
+            }
+        };
+
+        this.sseRequest = http.request(options, (res) => {
+            if (res.statusCode !== 200) {
+                console.error(`SSE Connection failed: ${res.statusCode}`);
+                this.retrySSE();
+                return;
+            }
+
+            console.log(`[Orchestrator] SSE stream connected.`);
+            this.connectionAttempts = 0;
+            let buffer = '';
+
+            res.on('data', (chunk) => {
+                const lines = chunk.toString().split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataVal = line.substring(6).trim();
+                        if (dataVal) {
+                            try {
+                                const event = JSON.parse(dataVal) as OrchestratorEvent;
+                                this.handleEvent(event);
+                            } catch (e) {
+                                console.error('Failed to parse SSE event:', dataVal);
+                            }
+                        }
+                    }
+                }
+            });
+
+            res.on('end', () => {
+                console.log('[Orchestrator] SSE stream ended.');
+                this.retrySSE();
+            });
+        });
+
+        this.sseRequest.on('error', (e) => {
+            console.error(`[Orchestrator] SSE Request Error: ${e.message}`);
+            this.retrySSE();
+        });
+
+        this.sseRequest.end();
+    }
+
+    private retrySSE(): void {
+        this.connectionAttempts++;
+        if (this.connectionAttempts <= 5 && this.pythonProcess && !this.pythonProcess.killed) {
+            console.log(`[Orchestrator] Retrying SSE connection in 1s (Attempt ${this.connectionAttempts})...`);
+            setTimeout(() => this.connectSSE(), 1000);
+        } else {
+            console.error(`[Orchestrator] Max SSE retries reached or process dead.`);
+        }
+    }
+
+    private cleanup(): void {
+        if (this.sseRequest) {
+            this.sseRequest.destroy();
+            this.sseRequest = null;
+        }
+        this.pythonProcess = null;
+        this.isReady = false;
+        this.serverPort = null;
     }
 
     /**
@@ -123,29 +221,6 @@ export class WorkflowOrchestrator extends EventEmitter {
             }
         }
         return null;
-    }
-
-    /**
-     * Handle incoming data from Python process
-     */
-    private handleData(data: string): void {
-        this.pendingData += data;
-
-        // Process complete JSON lines
-        let newlineIndex: number;
-        while ((newlineIndex = this.pendingData.indexOf('\n')) !== -1) {
-            const line = this.pendingData.substring(0, newlineIndex);
-            this.pendingData = this.pendingData.substring(newlineIndex + 1);
-
-            if (line.trim()) {
-                try {
-                    const event = JSON.parse(line) as OrchestratorEvent;
-                    this.handleEvent(event);
-                } catch (e) {
-                    console.error('Failed to parse orchestrator message:', line);
-                }
-            }
-        }
     }
 
     /**
@@ -193,28 +268,10 @@ export class WorkflowOrchestrator extends EventEmitter {
                     }
                 }
                 this.emit('executionComplete', event);
-
-                // Resolve pending promise
-                if (this.currentPromise) {
-                    this.currentPromise.resolve(event);
-                    this.currentPromise = null;
-                }
-                break;
-
-            case 'response':
-                // Generic response to a command
-                if (this.currentPromise) {
-                    this.currentPromise.resolve(event);
-                    this.currentPromise = null;
-                }
                 break;
 
             case 'error':
                 this.emit('error', new Error(event.error || 'Unknown error'));
-                if (this.currentPromise) {
-                    this.currentPromise.reject(new Error(event.error));
-                    this.currentPromise = null;
-                }
                 break;
 
             case 'cancelled':
@@ -253,19 +310,50 @@ export class WorkflowOrchestrator extends EventEmitter {
     }
 
     /**
-     * Send a message to the Python process
+     * Send an HTTP POST message to the Python orchestrator
      */
     private sendMessage(message: OrchestratorMessage): Promise<OrchestratorEvent> {
         return new Promise((resolve, reject) => {
-            if (!this.pythonProcess || !this.isReady) {
-                reject(new Error('Orchestrator not ready'));
+            if (!this.serverPort) {
+                reject(new Error('Orchestrator HTTP server not started'));
                 return;
             }
 
-            this.currentPromise = { resolve, reject };
+            const payload = JSON.stringify(message);
+            const options = {
+                hostname: '127.0.0.1',
+                port: this.serverPort,
+                path: '/message',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
+                }
+            };
 
-            const json = JSON.stringify(message) + '\n';
-            this.pythonProcess.stdin!.write(json);
+            const req = http.request(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(data) as OrchestratorEvent;
+                        if (parsed.status === 'error' || parsed.type === 'error') {
+                            reject(new Error(parsed.error || 'Unknown orchestrator error'));
+                        } else {
+                            resolve(parsed);
+                        }
+                    } catch (e) {
+                        reject(new Error('Invalid JSON response from orchestrator'));
+                    }
+                });
+            });
+
+            req.on('error', (e) => {
+                reject(e);
+            });
+
+            req.write(payload);
+            req.end();
         });
     }
 
