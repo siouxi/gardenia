@@ -168,11 +168,18 @@ export function initWorkflowEventListeners(onLog?: (message: string) => void): v
         onLog?.(msg);
     });
 
+    let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
     // Listen for node variables to update UI ports dynamically, but also fetch the actual data
-    api.onNodeVariables?.(async () => {
-        // We will trigger a variable refresh right now to see them live in the sidebar
-        await refreshVariables();
-        await refreshDatasets();
+    api.onNodeVariables?.(() => {
+        if (refreshTimeout) {
+            clearTimeout(refreshTimeout);
+        }
+        refreshTimeout = setTimeout(async () => {
+            await refreshVariables();
+            await refreshDatasets();
+            refreshTimeout = null;
+        }, 150);
     });
 
     // Listen for node output

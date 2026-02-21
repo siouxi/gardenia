@@ -91,11 +91,13 @@ class DAGExecutor:
         edges: List[DAGEdge],
         on_state_change: Optional[Callable[[str, ExecutionState], None]] = None,
         on_output: Optional[Callable[[str, str], None]] = None,
+        on_variables: Optional[Callable[[str, List[str]], None]] = None,
     ):
         self.nodes: Dict[str, DAGNode] = {n.id: n for n in nodes}
         self.edges: List[DAGEdge] = edges
         self.on_state_change = on_state_change
         self.on_output = on_output
+        self.on_variables = on_variables
         
         # Build adjacency lists
         self._adjacency: Dict[str, List[str]] = defaultdict(list)  # node -> successors
@@ -113,6 +115,8 @@ class DAGExecutor:
                 self._in_degree[node_id] = 0
         
         self._cancelled = False
+        self._cancel_event = asyncio.Event()
+        self._active_tasks: Set[asyncio.Task] = set()
         self._execute_node_fn: Optional[Callable] = None
     
     def get_topological_order(self) -> List[str]:
@@ -175,37 +179,26 @@ class DAGExecutor:
         self.nodes[node_id].state = state
         if self.on_state_change:
             self.on_state_change(node_id, state)
-        
-        # Emit state change as JSON to stdout for IPC
-        msg = {
-            "type": "state_change",
-            "node_id": node_id,
-            "state": state.value
-        }
-        print(json.dumps(msg), flush=True)
     
     def _emit_output(self, node_id: str, output: str) -> None:
         """Emit node output via callback"""
         self.nodes[node_id].output = output
         if self.on_output:
             self.on_output(node_id, output)
-        
-        msg = {
-            "type": "output",
-            "node_id": node_id,
-            "output": output
-        }
-        print(json.dumps(msg), flush=True)
 
     def _emit_variables(self, node_id: str, variables: List[str]) -> None:
         """Emit created variables via callback"""
-        msg = {
-            "type": "node_variables",
-            "node_id": node_id,
-            "variables": variables
-        }
-        print(json.dumps(msg), flush=True)
+        if getattr(self, 'on_variables', None):
+            self.on_variables(node_id, variables)
     
+    async def _execute_single_wrapper(self, node_id: str) -> Dict[str, Any]:
+        """Wrapper to catch cancellation properly"""
+        try:
+            return await self._execute_single(node_id)
+        except asyncio.CancelledError:
+            self._update_state(node_id, ExecutionState.CANCELLED)
+            return {"status": "cancelled", "error": "Execution cancelled"}
+
     async def execute(
         self,
         execute_node_fn: Callable[[DAGNode], Any],
@@ -216,34 +209,89 @@ class DAGExecutor:
         
         Args:
             execute_node_fn: Async function to execute a single node
-            parallel: If True, run independent nodes in parallel
-        
-        Returns:
-            Dictionary with execution results
+            parallel: If True, run independent nodes in parallel using an event-driven queue
         """
         self._execute_node_fn = execute_node_fn
         results: Dict[str, Any] = {}
         
         try:
             if parallel:
-                batches = self.get_parallel_batches()
-                for batch in batches:
-                    if self._cancelled:
-                        break
-                    
-                    # Mark batch as queued
-                    for node_id in batch:
+                in_degree = self._in_degree.copy()
+                ready_queue = asyncio.Queue()
+                
+                for node_id, degree in in_degree.items():
+                    if degree == 0:
+                        ready_queue.put_nowait(node_id)
+                        
+                self._active_tasks.clear()
+                processed_count = 0
+                total_nodes = len(self.nodes)
+                
+                if total_nodes > 0 and ready_queue.empty():
+                    raise ValueError("Cycle detected in DAG")
+                
+                error_occurred = False
+                
+                while processed_count < total_nodes and not (self._cancelled or error_occurred):
+                    # Drain queue and start tasks
+                    while not ready_queue.empty() and not (self._cancelled or error_occurred):
+                        node_id = ready_queue.get_nowait()
                         self._update_state(node_id, ExecutionState.QUEUED)
+                        task = asyncio.create_task(self._execute_single_wrapper(node_id))
+                        setattr(task, "node_id", node_id)
+                        self._active_tasks.add(task)
                     
-                    # Execute batch in parallel
-                    tasks = [self._execute_single(node_id) for node_id in batch]
-                    batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    if not self._active_tasks:
+                        if processed_count < total_nodes:
+                            raise ValueError(f"Cycle detected or unreachable nodes remaining. Processed {processed_count}/{total_nodes}")
+                        break
+                        
+                    # Wait for tasks or cancellation
+                    cancel_task = asyncio.create_task(self._cancel_event.wait())
+                    wait_tasks = [cancel_task] + list(self._active_tasks)
                     
-                    for node_id, result in zip(batch, batch_results):
-                        if isinstance(result, Exception):
-                            results[node_id] = {"error": str(result)}
-                        else:
-                            results[node_id] = result
+                    done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
+                    
+                    if cancel_task in done:
+                        # Cancelled from outside
+                        break
+                    else:
+                        cancel_task.cancel()
+                        
+                    for task in done:
+                        if task == cancel_task: continue
+                        self._active_tasks.remove(task)
+                        node_id = getattr(task, "node_id")
+                        result = task.result()
+                        results[node_id] = result
+                        processed_count += 1
+                        
+                        node = self.nodes[node_id]
+                        if node.state == ExecutionState.ERROR and node.tool_id not in ('flow-start', 'flow-end'):
+                            error_occurred = True
+                            break
+                            
+                        # Unlock successors
+                        if not (self._cancelled or error_occurred):
+                            for successor in self._adjacency[node_id]:
+                                in_degree[successor] -= 1
+                                if in_degree[successor] == 0:
+                                    ready_queue.put_nowait(successor)
+                                    
+                # Cleanup and mark remaining as skipped/cancelled
+                if self._cancelled or error_occurred:
+                    for task in self._active_tasks:
+                        task.cancel()
+                        
+                    if self._active_tasks:
+                        await asyncio.gather(*self._active_tasks, return_exceptions=True)
+                        self._active_tasks.clear()
+                        
+                    for node_id, node in self.nodes.items():
+                        if node.state in (ExecutionState.PENDING, ExecutionState.QUEUED):
+                            new_state = ExecutionState.CANCELLED if self._cancelled else ExecutionState.SKIPPED
+                            self._update_state(node_id, new_state)
+                            
             else:
                 # Sequential execution
                 order = self.get_topological_order()
@@ -322,6 +370,9 @@ class DAGExecutor:
     def cancel(self) -> None:
         """Cancel ongoing execution"""
         self._cancelled = True
+        self._cancel_event.set()
+        for task in self._active_tasks:
+            task.cancel()
         for node_id, node in self.nodes.items():
             if node.state in (ExecutionState.PENDING, ExecutionState.QUEUED):
                 self._update_state(node_id, ExecutionState.CANCELLED)

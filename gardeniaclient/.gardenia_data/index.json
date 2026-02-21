@@ -3,154 +3,172 @@
     {
       "name": "data",
       "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/data.parquet",
-      "num_rows": 3282,
-      "num_columns": 6,
+      "num_rows": 50000,
+      "num_columns": 7,
       "columns": [
         {
-          "name": "Sales Person",
-          "type": "string"
+          "name": "Name",
+          "type": "large_string"
         },
         {
-          "name": "Country",
-          "type": "string"
+          "name": "Category",
+          "type": "large_string"
         },
         {
-          "name": "Product",
-          "type": "string"
+          "name": "Dosage Form",
+          "type": "large_string"
         },
         {
-          "name": "Date",
-          "type": "string"
+          "name": "Strength",
+          "type": "large_string"
         },
         {
-          "name": "Amount",
-          "type": "string"
+          "name": "Manufacturer",
+          "type": "large_string"
         },
         {
-          "name": "Boxes Shipped",
-          "type": "int64"
+          "name": "Indication",
+          "type": "large_string"
+        },
+        {
+          "name": "Classification",
+          "type": "large_string"
         }
       ],
-      "size_bytes": 47788,
-      "created_at": "2026-02-07T17:11:01.167796",
-      "source_node_id": "csv-input-1770502228921",
+      "size_bytes": 205741,
+      "created_at": "2026-02-20T10:29:34.228463",
+      "source_node_id": "csv-input-1771601243119",
       "preview": [
         {
-          "Sales Person": "Jehu Rudeforth",
-          "Country": "UK",
-          "Product": "Mint Chip Choco",
-          "Date": "04/01/2022",
-          "Amount": "$5,320.00",
-          "Boxes Shipped": 180
+          "Name": "Acetocillin",
+          "Category": "Antidiabetic",
+          "Dosage Form": "Cream",
+          "Strength": "938 mg",
+          "Manufacturer": "Roche Holding AG",
+          "Indication": "Virus",
+          "Classification": "Over-the-Counter"
         },
         {
-          "Sales Person": "Van Tuxwell",
-          "Country": "India",
-          "Product": "85% Dark Bars",
-          "Date": "01/08/2022",
-          "Amount": "$7,896.00",
-          "Boxes Shipped": 94
+          "Name": "Ibuprocillin",
+          "Category": "Antiviral",
+          "Dosage Form": "Injection",
+          "Strength": "337 mg",
+          "Manufacturer": "CSL Limited",
+          "Indication": "Infection",
+          "Classification": "Over-the-Counter"
         },
         {
-          "Sales Person": "Gigi Bohling",
-          "Country": "India",
-          "Product": "Peanut Butter Cubes",
-          "Date": "07/07/2022",
-          "Amount": "$4,501.00",
-          "Boxes Shipped": 91
+          "Name": "Dextrophen",
+          "Category": "Antibiotic",
+          "Dosage Form": "Ointment",
+          "Strength": "333 mg",
+          "Manufacturer": "Johnson & Johnson",
+          "Indication": "Wound",
+          "Classification": "Prescription"
         },
         {
-          "Sales Person": "Jan Morforth",
-          "Country": "Australia",
-          "Product": "Peanut Butter Cubes",
-          "Date": "27/04/2022",
-          "Amount": "$12,726.00",
-          "Boxes Shipped": 342
+          "Name": "Clarinazole",
+          "Category": "Antifungal",
+          "Dosage Form": "Syrup",
+          "Strength": "362 mg",
+          "Manufacturer": "AbbVie Inc.",
+          "Indication": "Pain",
+          "Classification": "Prescription"
         },
         {
-          "Sales Person": "Jehu Rudeforth",
-          "Country": "UK",
-          "Product": "Peanut Butter Cubes",
-          "Date": "24/02/2022",
-          "Amount": "$13,685.00",
-          "Boxes Shipped": 184
+          "Name": "Amoxicillin",
+          "Category": "Antifungal",
+          "Dosage Form": "Tablet",
+          "Strength": "802 mg",
+          "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
+          "Indication": "Wound",
+          "Classification": "Over-the-Counter"
         }
       ]
     },
     {
-      "name": "daty",
-      "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/daty.parquet",
-      "num_rows": 3282,
-      "num_columns": 6,
+      "name": "data2",
+      "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/data2.parquet",
+      "num_rows": 50000,
+      "num_columns": 7,
       "columns": [
         {
-          "name": "Sales Person",
-          "type": "string"
+          "name": "Name",
+          "type": "large_string"
         },
         {
-          "name": "Country",
-          "type": "string"
+          "name": "Category",
+          "type": "large_string"
         },
         {
-          "name": "Product",
-          "type": "string"
+          "name": "Dosage Form",
+          "type": "large_string"
         },
         {
-          "name": "Date",
-          "type": "string"
+          "name": "Strength",
+          "type": "large_string"
         },
         {
-          "name": "Amount",
-          "type": "string"
+          "name": "Manufacturer",
+          "type": "large_string"
         },
         {
-          "name": "Boxes Shipped",
-          "type": "int64"
+          "name": "Indication",
+          "type": "large_string"
+        },
+        {
+          "name": "Classification",
+          "type": "large_string"
         }
       ],
-      "size_bytes": 47788,
-      "created_at": "2026-02-07T17:12:22.712166",
-      "source_node_id": "csv-input-1770502228921",
+      "size_bytes": 205741,
+      "created_at": "2026-02-20T10:29:41.679322",
+      "source_node_id": "csv-input-1771601243119",
       "preview": [
         {
-          "Sales Person": "Jehu Rudeforth",
-          "Country": "UK",
-          "Product": "Mint Chip Choco",
-          "Date": "04/01/2022",
-          "Amount": "$5,320.00",
-          "Boxes Shipped": 180
+          "Name": "Acetocillin",
+          "Category": "Antidiabetic",
+          "Dosage Form": "Cream",
+          "Strength": "938 mg",
+          "Manufacturer": "Roche Holding AG",
+          "Indication": "Virus",
+          "Classification": "Over-the-Counter"
         },
         {
-          "Sales Person": "Van Tuxwell",
-          "Country": "India",
-          "Product": "85% Dark Bars",
-          "Date": "01/08/2022",
-          "Amount": "$7,896.00",
-          "Boxes Shipped": 94
+          "Name": "Ibuprocillin",
+          "Category": "Antiviral",
+          "Dosage Form": "Injection",
+          "Strength": "337 mg",
+          "Manufacturer": "CSL Limited",
+          "Indication": "Infection",
+          "Classification": "Over-the-Counter"
         },
         {
-          "Sales Person": "Gigi Bohling",
-          "Country": "India",
-          "Product": "Peanut Butter Cubes",
-          "Date": "07/07/2022",
-          "Amount": "$4,501.00",
-          "Boxes Shipped": 91
+          "Name": "Dextrophen",
+          "Category": "Antibiotic",
+          "Dosage Form": "Ointment",
+          "Strength": "333 mg",
+          "Manufacturer": "Johnson & Johnson",
+          "Indication": "Wound",
+          "Classification": "Prescription"
         },
         {
-          "Sales Person": "Jan Morforth",
-          "Country": "Australia",
-          "Product": "Peanut Butter Cubes",
-          "Date": "27/04/2022",
-          "Amount": "$12,726.00",
-          "Boxes Shipped": 342
+          "Name": "Clarinazole",
+          "Category": "Antifungal",
+          "Dosage Form": "Syrup",
+          "Strength": "362 mg",
+          "Manufacturer": "AbbVie Inc.",
+          "Indication": "Pain",
+          "Classification": "Prescription"
         },
         {
-          "Sales Person": "Jehu Rudeforth",
-          "Country": "UK",
-          "Product": "Peanut Butter Cubes",
-          "Date": "24/02/2022",
-          "Amount": "$13,685.00",
-          "Boxes Shipped": 184
+          "Name": "Amoxicillin",
+          "Category": "Antifungal",
+          "Dosage Form": "Tablet",
+          "Strength": "802 mg",
+          "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
+          "Indication": "Wound",
+          "Classification": "Over-the-Counter"
         }
       ]
     }

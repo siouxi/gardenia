@@ -100,7 +100,7 @@ class PythonWorker:
             ExecutionResult with output and created variables
         """
         import threading
-        import tracemalloc
+        import ctypes
         
         # Prepare namespace
         self._namespace = {}
@@ -134,36 +134,35 @@ class PythonWorker:
         
         # Execution state for thread communication
         execution_result = {"completed": False, "error": None}
-        memory_limit_bytes = memory_limit_mb * 1024 * 1024
         
         def execute_code():
             try:
-                # Start memory tracking
-                tracemalloc.start()
-                
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
                     exec(code, self._namespace)
-                
-                # Check peak memory usage
-                current, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                
-                if peak > memory_limit_bytes:
-                    execution_result["error"] = f"MemoryError: Peak memory usage ({peak // (1024*1024)}MB) exceeded limit ({memory_limit_mb}MB)"
-                else:
-                    execution_result["completed"] = True
+                execution_result["completed"] = True
                     
+            except SystemExit:
+                pass # Killed by timeout
             except Exception as e:
-                tracemalloc.stop()
                 execution_result["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
         
         # Run in thread with timeout
-        thread = threading.Thread(target=execute_code)
+        thread = threading.Thread(target=execute_code, daemon=True)
         thread.start()
         thread.join(timeout=timeout)
         
         if thread.is_alive():
             # Timeout occurred - thread is still running
+            try:
+                if thread.ident:
+                    tid = ctypes.c_long(thread.ident)
+                    exc = ctypes.py_object(SystemExit)
+                    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, exc)
+                    if res > 1:
+                        ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
+            except Exception as e:
+                log.warning(f"Failed to kill timed out python thread: {e}")
+                
             error_data = GardeniaError(
                 category=ErrorCategory.TIMEOUT,
                 message=f"Execution timed out after {timeout} seconds",
@@ -230,9 +229,11 @@ class RWorkerBridge:
         self._pending_data: str = ""
         self._is_ready: bool = False
         self._temp_dir = tempfile.mkdtemp(prefix="gardenia_r_ipc_")
+        self._stderr_task: Optional[asyncio.Task] = None
     
     def __del__(self):
         # Cleanup temp dir
+        self.stop()
         if os.path.exists(self._temp_dir):
             shutil.rmtree(self._temp_dir, ignore_errors=True)
             
@@ -262,32 +263,39 @@ class RWorkerBridge:
     
     async def start(self) -> bool:
         """Start the R subprocess"""
-        import subprocess
-        
-        if self._process is not None:
+        if self._process is not None and self._process.returncode is None:
             return True
-        
-        # Find bridge script
-        self._bridge_script = self._find_bridge_script()
-        if not self._bridge_script:
+            
+        bridge_script = self._find_bridge_script()
+        if not bridge_script:
             log.error("Could not find r_bridge.R script")
             return False
-        
+            
+        import asyncio.subprocess
         try:
-            self._process = subprocess.Popen(
-                [self._r_path, "--vanilla", self._bridge_script],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,  # Line buffered
+            self._process = await asyncio.create_subprocess_exec(
+                self._r_path, "--vanilla", bridge_script,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                limit=1024 * 1024 * 128  # 128 MB limit for large JSON lines
             )
+            
+            async def consume_stderr():
+                while self._process and self._process.returncode is None:
+                    try:
+                        line = await self._process.stderr.readline()
+                        if not line:
+                            break
+                        line_str = line.decode('utf-8').strip()
+                        if line_str:
+                            log.debug(f"[R stderr] {line_str}")
+                    except Exception:
+                        break
+                        
+            self._stderr_task = asyncio.create_task(consume_stderr())
             self._is_ready = True
-            log.info(f"R process started with PID {self._process.pid}")
             return True
-        except FileNotFoundError:
-            log.error(f"Rscript not found at '{self._r_path}'")
-            return False
         except Exception as e:
             log.error(f"Failed to start R process: {e}")
             return False
@@ -297,75 +305,70 @@ class RWorkerBridge:
         if self._process:
             try:
                 self._process.terminate()
-                self._process.wait(timeout=5)
-            except Exception:
-                self._process.kill()
-            finally:
-                self._process = None
-                self._is_ready = False
+            except ProcessLookupError:
+                pass
+            self._process = None
+            self._is_ready = False
+        if getattr(self, '_stderr_task', None):
+            self._stderr_task.cancel()
+            self._stderr_task = None
     
     def is_running(self) -> bool:
         """Check if R process is running"""
-        return self._process is not None and self._process.poll() is None
+        return self._process is not None and self._process.returncode is None
     
-    def _create_input_ipc(self, node_id: str, parameters: Optional[Dict[str, Any]] = None) -> Optional[str]:
-        """ Create Arrow IPC file with input dataframe for R. """
+    def _create_input_ipcs(self, node_id: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+        """ Create Arrow IPC files for all input dataframes for R. Returns list of {name, path}. """
         if not ARROW_AVAILABLE:
-            return None
+            return []
             
-        data = {}
-        
         # Only inject workflow variables that seem to be dataframes
         # Or inject parameters that are tables
         workflow_vars = self.registry.get_all_workflow_vars()
         all_inputs = {**(parameters or {}), **workflow_vars}
         
-        target_df = None
-        target_name = None
+        ipc_files = []
         
-        # Prefer 'data' variable if exists
-        if 'data' in all_inputs:
-             v = all_inputs['data']
-             # Check if it's dataframe-like
-             if isinstance(v, (pa.Table, dict)) or hasattr(v, 'to_parquet'):
-                 target_name = 'data'
-                 target_df = v
-        
-        if target_df is None:
-            # Find first dataframe-like
-             for k, v in all_inputs.items():
-                 if hasattr(v, 'to_parquet') or isinstance(v, pa.Table):
-                     target_name = k
-                     target_df = v
-                     break
-        
-        if target_df is not None:
-            try:
-                if isinstance(target_df, pa.Table):
-                    table = target_df
-                elif hasattr(target_df, 'to_parquet') and ARROW_AVAILABLE: # Pandas
-                     # Ensure we convert pandas to Arrow Table
-                     try: 
-                         table = pa.Table.from_pandas(target_df)
-                     except:
-                         # Fallback or already Table-like?
-                         return None
-                else: 
-                     return None
+        for name, target_df in all_inputs.items():
+            if target_df is None:
+                continue
+                
+            is_df = False
+            if isinstance(target_df, pa.Table):
+                is_df = True
+            elif hasattr(target_df, 'to_parquet'): # Pandas
+                is_df = True
+            elif isinstance(target_df, dict) and all(isinstance(v, list) for v in target_df.values()):
+                # dictionary of lists could be convertible
+                is_df = True
 
-                fname = f"{node_id}_input.arrow"
-                fpath = os.path.join(self._temp_dir, fname)
+            if is_df:
+                try:
+                    if isinstance(target_df, pa.Table):
+                        table = target_df
+                    elif hasattr(target_df, 'to_parquet'): 
+                         try: 
+                             table = pa.Table.from_pandas(target_df)
+                         except:
+                             continue
+                    else:
+                         try:
+                             table = pa.table(target_df)
+                         except:
+                             continue
+
+                    fname = f"{node_id}_input_{name}.arrow"
+                    fpath = os.path.join(self._temp_dir, fname)
+                    
+                    with pa.OSFile(fpath, 'wb') as sink:
+                        with pa.ipc.new_file(sink, table.schema) as writer:
+                            writer.write(table)
+                            
+                    ipc_files.append({"name": name, "path": fpath})
+                except Exception as e:
+                    log.warning(f"Failed to create Arrow IPC for {name}: {e}")
                 
-                with pa.OSFile(fpath, 'wb') as sink:
-                    with pa.ipc.new_file(sink, table.schema) as writer:
-                        writer.write(table)
-                        
-                return fpath
-            except Exception as e:
-                log.warning(f"Failed to create Arrow IPC: {e}")
-                return None
-                
-        return None
+        return ipc_files
 
     def _prepare_request(
         self,
@@ -375,13 +378,13 @@ class RWorkerBridge:
     ) -> str:
         """Prepare JSON command"""
         # Create input IPC if applicable
-        input_ipc = self._create_input_ipc(node_id, parameters)
+        input_ipc = self._create_input_ipcs(node_id, parameters)
         
         # Also inject simple parameters as code for fallback/hybrid
         param_code = ""
         
         # NEW: Inject 'inputs' list for unified access in R too
-        inputs_code = "inputs <- list()\n"
+        inputs_code = 'if (!exists("inputs")) inputs <- list()\n'
         
         all_data = {**(parameters or {}), **self.registry.get_all_workflow_vars()}
         
@@ -405,7 +408,7 @@ class RWorkerBridge:
             "id": node_id,
             "code": full_code,
             "output_dir": self._temp_dir,
-            "input_ipc": input_ipc
+            "input_ipcs": input_ipc
         }
         return json.dumps(cmd)
 
@@ -421,24 +424,41 @@ class RWorkerBridge:
         Execute R code.
         """
         if not self.is_running():
-            if not await self.start():
-                 return ExecutionResult(status="error", output="", error="Failed to start R process")
+            success = await self.start()
+            if not success:
+                return ExecutionResult(status="error", output="", error="Could not start R process")
 
         try:
             request_json = self._prepare_request(code, node_id, parameters)
             
-            self._process.stdin.write(request_json + "\n")
-            self._process.stdin.flush()
+            self._process.stdin.write((request_json + "\n").encode('utf-8'))
+            await self._process.stdin.drain()
             
-            # Read response
-            response_line = self._process.stdout.readline()
-            if not response_line:
-                 return ExecutionResult(status="error", output="", error="R process died/empty response")
-            
-            try:
-                response = json.loads(response_line)
-            except json.JSONDecodeError:
-                 return ExecutionResult(status="error", output=response_line, error="Invalid JSON response")
+            stdout_str = ""
+            while True:
+                try:
+                    stdout_data = await asyncio.wait_for(
+                        self._process.stdout.readline(),
+                        timeout=timeout
+                    )
+                except asyncio.TimeoutError:
+                    self.stop()
+                    return ExecutionResult(status="timeout", output="", error="Execution timed out")
+                
+                if not stdout_data:
+                    self.stop()
+                    return ExecutionResult(status="error", output=stdout_str, error="R process died/empty response")
+                
+                line = stdout_data.decode('utf-8').strip()
+                if not line:
+                    continue
+                    
+                try:
+                    response = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    log.debug(f"[R stdout unexpected] {line}")
+                    stdout_str += line + "\n"
             
             status = response.get("status", "error")
             output = response.get("output", "")
@@ -453,20 +473,18 @@ class RWorkerBridge:
                 if not name: continue
                 
                 val = v.get("value")
+                ipc_path = None
                 
                 # Check for IPC file
                 if v.get("is_dataframe") and v.get("ipc_path") and ARROW_AVAILABLE:
                     ipc_path = v.get("ipc_path")
                     if os.path.exists(ipc_path):
-                        try:
-                            # Read Table back
-                            with pa.ipc.open_file(ipc_path) as reader:
-                                table = reader.read_all()
-                                val = table.to_pandas() # Convert to pandas for Python ecosystem compatibility
-                        except Exception as e:
-                            log.error(f"Failed to read IPC from R: {e}")
+                        val = None
+                        log.debug(f"Received Arrow IPC reference for {name}: {ipc_path}")
+                    else:
+                        ipc_path = None
                 
-                if val is not None:
+                if val is not None or ipc_path is not None:
                     created_vars.add(name)
                     self.registry.set(
                         name=name,
@@ -474,8 +492,13 @@ class RWorkerBridge:
                         scope=VariableScope.WORKFLOW,
                         node_id=node_id,
                         type_hint=v.get("type_hint"),
-                        is_dataframe=v.get("is_dataframe", False)
+                        is_dataframe=v.get("is_dataframe", False),
+                        ipc_path=ipc_path,
+                        preview=v.get("preview")
                     )
+
+            if stdout_str.strip():
+                output = f"{stdout_str.strip()}\n{output}"
 
             return ExecutionResult(
                 status=status,
@@ -516,10 +539,11 @@ class WorkerManager:
         Execute code in the appropriate worker.
         """
         if language == "python":
-            return self._python_worker.execute(
+            import asyncio
+            return await asyncio.to_thread(
+                self._python_worker.execute,
                 code, node_id, parameters,
-                timeout=timeout,
-                memory_limit_mb=memory_limit_mb
+                timeout, memory_limit_mb
             )
         elif language == "r":
             return await self._r_worker.execute(

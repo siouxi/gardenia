@@ -36,6 +36,8 @@ class Variable:
     type_hint: str = "any"  # Python type hint
     node_id: Optional[str] = None  # Source node for traceability
     is_dataframe: bool = False  # Flag for tabular data
+    ipc_path: Optional[str] = None  # NEW: Path to Arrow IPC/Parquet file on disk if deferred
+    preview: Optional[str] = None   # NEW: String preview for frontend
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -45,22 +47,57 @@ class Variable:
             "type_hint": self.type_hint,
             "node_id": self.node_id,
             "is_dataframe": self.is_dataframe,
+            "ipc_path": self.ipc_path,
+            "preview": self.preview,
         }
     
     def _serialize_value(self) -> Any:
         """Serialize value for JSON transport"""
         if self.is_dataframe:
-            # Return metadata, not full data
-            return {
-                "_type": "dataframe",
-                "preview": "DataFrame (use get_dataframe to access)",
-            }
-        
-        try:
-            json.dumps(self.value)
+            # Return preview metadata instead of dropping huge dataframes into JSON
+            if self.preview:
+                return self.preview
+            if hasattr(self.value, 'shape'):
+                return f"DataFrame {self.value.shape}"
+            return "[DataFrame]"
+            
+        # Optimization: Do not serialize if it's already a basic python type
+        if isinstance(self.value, (int, float, bool, type(None))):
             return self.value
-        except (TypeError, ValueError):
-            return str(self.value)
+        if isinstance(self.value, str):
+            if len(self.value) > 1000:
+                return self.value[:1000] + "... [truncated]"
+            return self.value
+            
+        # Prevent freezing on huge lists and dicts
+        if isinstance(self.value, list):
+            if len(self.value) > 100:
+                return f"[List with {len(self.value)} elements]"
+            try:
+                s = json.dumps(self.value)
+                if len(s) > 5000:
+                    return f"[Large List with {len(self.value)} elements]"
+                return json.loads(s)
+            except Exception:
+                return f"[List with {len(self.value)} elements]"
+                
+        if isinstance(self.value, dict):
+            if len(self.value) > 50:
+                return f"{{Dictionary with {len(self.value)} keys}}"
+            try:
+                s = json.dumps(self.value)
+                if len(s) > 5000:
+                    return f"{{Large Dictionary with {len(self.value)} keys}}"
+                return json.loads(s)
+            except Exception:
+                 return f"{{Dictionary with {len(self.value)} keys}}"
+                 
+        try:
+            # fallback for unhandled objects
+            res = str(self.value)
+            return res[:1000] + "... [truncated]" if len(res) > 1000 else res
+        except Exception:
+            return "[Object]"
 
 
 class VariableRegistry:
@@ -89,36 +126,52 @@ class VariableRegistry:
         node_id: Optional[str] = None,
         type_hint: Optional[str] = None,
         is_dataframe: Optional[bool] = None,
+        ipc_path: Optional[str] = None,
+        preview: Optional[str] = None,
     ) -> Variable:
         """
         Store a variable in the registry.
         
         Args:
             name: Variable name
-            value: Value to store
+            value: Value to store (can be None if ipc_path is provided)
             scope: Storage scope (global, workflow, node)
             node_id: Required for NODE scope
             type_hint: Optional Python type hint
             is_dataframe: Optional flag to explicitly mark as dataframe (e.g. from R)
+            ipc_path: Optional path to Arrow IPC file for zero-copy
+            preview: Optional string preview of the data
         """
         if scope == VariableScope.NODE and not node_id:
             raise ValueError("node_id required for NODE scope")
         
         # Infer type hint if not provided
-        if type_hint is None:
+        if type_hint is None and value is not None:
             type_hint = type(value).__name__
         
         # Check if it's a dataframe-like object
-        if is_dataframe is None:
+        if is_dataframe is None and value is not None:
             is_dataframe = self._is_dataframe(value)
+        elif is_dataframe is None and ipc_path is not None:
+            is_dataframe = True # IPC files are dataframes
         
+        # DO NOT store the heavy dataframe in memory if we have it on disk!
+        # The executor will handle loading it back when needed.
+        if is_dataframe and ipc_path and value is not None:
+             # Discard the memory copy, keep only the reference!
+             stored_value = None 
+        else:
+             stored_value = value
+             
         var = Variable(
             name=name,
-            value=value,
+            value=stored_value,
             scope=scope,
-            type_hint=type_hint,
+            type_hint=type_hint or "dataframe",
             node_id=node_id,
             is_dataframe=is_dataframe,
+            ipc_path=ipc_path,
+            preview=preview,
         )
         
         with self._lock:
@@ -138,6 +191,8 @@ class VariableRegistry:
                 "scope": scope.value,
                 "node_id": node_id,
             })
+            
+        return var
         
     def clear(self, scope: Optional[VariableScope] = None) -> None:
         """
@@ -306,21 +361,39 @@ class VariableRegistry:
     def inject_into_namespace(self, namespace: Dict[str, Any], node_id: Optional[str] = None) -> None:
         """
         Inject all accessible variables into a namespace dict.
-        Used for code execution.
+        Used for code execution. Lazily loads DataFrames from IPC paths.
         """
+        import pyarrow.parquet as pq
+        import pyarrow.ipc as ipc
+        
+        def _resolve_value(var: Variable) -> Any:
+            if var.is_dataframe and var.ipc_path:
+                try:
+                    # Depending on if it's parquet or arrow ipc format
+                    if var.ipc_path.endswith('.parquet'):
+                        return pq.read_table(var.ipc_path).to_pandas()
+                    else:
+                        import pyarrow as pa
+                        with pa.ipc.open_file(var.ipc_path) as reader:
+                            return reader.read_all().to_pandas()
+                except Exception as e:
+                    log.error(f"Failed to lazy-load dataframe {var.name} from {var.ipc_path}: {e}")
+                    return None
+            return var.value
+
         with self._lock:
             # Global vars first (lowest priority)
             for name, var in self._global.items():
-                namespace[name] = var.value
+                namespace[name] = _resolve_value(var)
             
             # Workflow vars
             for name, var in self._workflow.items():
-                namespace[name] = var.value
+                namespace[name] = _resolve_value(var)
             
             # Node vars (highest priority)
             if node_id and node_id in self._nodes:
                 for name, var in self._nodes[node_id].items():
-                    namespace[name] = var.value
+                    namespace[name] = _resolve_value(var)
     
     def extract_from_namespace(
         self,

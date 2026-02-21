@@ -21,7 +21,7 @@ import logging
 sys.path.insert(0, str(__file__).rsplit('/', 2)[0])
 
 from core.dag_engine import DAGExecutor, DAGNode, DAGEdge, ExecutionState
-from core.variable_registry import get_registry, reset_registry
+from core.variable_registry import get_registry, reset_registry, VariableScope
 from core.worker_manager import get_worker_manager, WorkerManager
 from core.storage import get_storage, ArrowStorage
 
@@ -105,7 +105,25 @@ class Orchestrator:
             return {"status": "error", "error": "No nodes in workflow"}
         
         # Create executor
-        self._current_executor = DAGExecutor(nodes, edges)
+        self._current_executor = DAGExecutor(
+            nodes,
+            edges,
+            on_state_change=lambda n_id, state: self._send_message({
+                "type": "state_change",
+                "node_id": n_id,
+                "state": state.value
+            }),
+            on_output=lambda n_id, text: self._send_message({
+                "type": "output",
+                "node_id": n_id,
+                "output": text
+            }),
+            on_variables=lambda n_id, vars_list: self._send_message({
+                "type": "node_variables",
+                "node_id": n_id,
+                "variables": vars_list
+            })
+        )
         
         # Send execution order
         try:
@@ -132,15 +150,35 @@ class Orchestrator:
             # Auto-save datasets to storage
             if result.variables_created:
                 for var_name in result.variables_created:
-                    val = self.registry.get(var_name)
-                    # Check if pandas DataFrame or Arrow Table (duck typing)
-                    is_df = False
-                    if hasattr(val, 'to_parquet'): is_df = True
-                    if hasattr(val, 'schema') and hasattr(val, 'num_rows'): is_df = True
+                    var = self.registry._get_from_scope(var_name, VariableScope.WORKFLOW, None)
+                    if not var: continue
+                    
+                    # We can auto-save if it's explicitly marked as a dataframe 
+                    # OR if duck typing says it's a pandas/arrow table in memory
+                    val = var.value
+                    is_df = var.is_dataframe
+                    
+                    if not is_df and val is not None:
+                         if hasattr(val, 'to_parquet'): is_df = True
+                         if hasattr(val, 'schema') and hasattr(val, 'num_rows'): is_df = True
                     
                     if is_df:
                         try:
-                            self.storage.write(var_name, val, source_node_id=node.id)
+                            # If it's a lazy IPC reference from R, we need to read it to convert to Parquet storage
+                            if var.ipc_path and val is None:
+                                import pyarrow.parquet as pq
+                                import pyarrow.ipc as ipc
+                                if var.ipc_path.endswith('.parquet'):
+                                    data_to_save = pq.read_table(var.ipc_path)
+                                else:
+                                    import pyarrow as pa
+                                    with pa.ipc.open_file(var.ipc_path) as reader:
+                                        data_to_save = reader.read_all()
+                                self.storage.write(var_name, data_to_save, source_node_id=node.id)
+                            else:
+                                # Normal memory dataframe
+                                self.storage.write(var_name, val, source_node_id=node.id)
+                                
                             log.info(f"Auto-saved dataset '{var_name}' to storage")
                         except Exception as e:
                             log.warning(f"Failed to auto-save dataset '{var_name}': {e}")
@@ -148,7 +186,7 @@ class Orchestrator:
             return result.to_dict()
         
         try:
-            results = await self._current_executor.execute(execute_node, parallel=False)
+            results = await self._current_executor.execute(execute_node, parallel=True)
             
             # Get final variable state
             variables = self.registry.list_variables()
@@ -231,6 +269,39 @@ class Orchestrator:
         
         if msg_type == "execute":
             return await self.execute_workflow(payload)
+            
+        elif msg_type == "test_node":
+            # AI Agent feedback loop: test a single node's code without entire DAG
+            code = payload.get("code", "")
+            language = payload.get("language", "python")
+            parameters = payload.get("parameters", {})
+            timeout = payload.get("timeout", 10)
+            
+            result = await self.worker.execute(
+                code=code,
+                language=language,
+                node_id="test_node_sandbox",
+                parameters=parameters,
+                timeout=timeout,
+            )
+            return {"status": "success", "result": result.to_dict()}
+            
+        elif msg_type == "get_llm_context":
+            # AI Agent context injection
+            vars_info = self.get_variables()
+            datasets = self.list_datasets()
+            
+            context_str = "Current Memory / Variables:\n"
+            for v in vars_info:
+                if v.get('is_dataframe'):
+                    context_str += f"- DataFrame '{v['name']}': {v.get('preview', 'unknown shape')}\n"
+                else:
+                    context_str += f"- Variable '{v['name']}' ({v.get('type_hint')}): {v.get('value')}\n"
+                    
+            if not vars_info:
+                context_str += "- (Empty)\n"
+                
+            return {"status": "success", "context": context_str, "raw_datasets": datasets}
         
         elif msg_type == "cancel":
             self.cancel()
@@ -276,45 +347,97 @@ class Orchestrator:
             return {"status": "error", "error": f"Unknown message type: {msg_type}"}
 
 
-async def main():
-    """Main entry point - read JSON messages from stdin"""
-    orchestrator = Orchestrator()
-    
-    # Send ready signal
-    print(json.dumps({"type": "ready", "version": "1.0.0"}), flush=True)
-    
-    # Read messages from stdin
-    loop = asyncio.get_event_loop()
-    reader = asyncio.StreamReader()
-    protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-    
-    while True:
+# --- HTTP Server Setup ---
+import aiohttp
+from aiohttp import web
+
+# Global list of connected client queues
+sse_clients = set()
+
+# Monkey-patch _send_message so it pushes to all clients
+def _queue_message(self, msg: Dict[str, Any]) -> None:
+    for queue in sse_clients:
         try:
-            line = await reader.readline()
-            if not line:
-                break  # EOF
-            
-            try:
-                msg = json.loads(line.decode().strip())
-                result = await orchestrator.handle_message(msg)
-                
-                if result:
-                    print(json.dumps({"type": "response", **result}), flush=True)
-            
-            except json.JSONDecodeError as e:
-                print(json.dumps({
-                    "type": "error",
-                    "error": f"Invalid JSON: {e}"
-                }), flush=True)
+            queue.put_nowait(msg)
+        except asyncio.QueueFull:
+            pass
+
+Orchestrator._send_message = _queue_message
+
+async def handle_post_message(request):
+    """Handle incoming JSON-RPC from Electron."""
+    try:
+        msg = await request.json()
+        orchestrator = request.app['orchestrator']
+        result = await orchestrator.handle_message(msg)
+        return web.json_response({"type": "response", **(result or {})})
+    except json.JSONDecodeError as e:
+        return web.json_response({"type": "error", "error": f"Invalid JSON: {e}"}, status=400)
+    except Exception as e:
+        log.error(f"Error processing message: {e}")
+        return web.json_response({"type": "error", "error": str(e)}, status=500)
+
+async def handle_sse(request):
+    """Server-Sent Events endpoint to stream real-time updates back to Electron."""
+    response = web.StreamResponse()
+    response.headers['Content-Type'] = 'text/event-stream'
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Connection'] = 'keep-alive'
+    
+    await response.prepare(request)
+    
+    # Create a unique queue for this connection
+    client_queue = asyncio.Queue(maxsize=1000)
+    sse_clients.add(client_queue)
+    
+    # Send initial ready state
+    ready_msg = json.dumps({"type": "ready", "version": "1.0.0"})
+    await response.write(f"data: {ready_msg}\n\n".encode('utf-8'))
+    
+    try:
+        while True:
+            # Wait for next event
+            msg = await client_queue.get()
+            data_str = json.dumps(msg)
+            await response.write(f"data: {data_str}\n\n".encode('utf-8'))
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        log.warning(f"SSE client disconnected: {e}")
+    finally:
+        sse_clients.remove(client_queue)
         
-        except Exception as e:
-            log.error(f"Error processing message: {e}")
-            print(json.dumps({
-                "type": "error", 
-                "error": str(e)
-            }), flush=True)
+    return response
+
+async def init_app():
+    app = web.Application()
+    app['orchestrator'] = Orchestrator()
+    app.router.add_post('/message', handle_post_message)
+    app.router.add_get('/events', handle_sse)
+    return app
+
+async def start_server():
+    app = await init_app()
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Bind to port 0 to get an OS-assigned available port
+    site = web.TCPSite(runner, '127.0.0.1', 0)
+    await site.start()
+    
+    actual_port = site._server.sockets[0].getsockname()[1]
+    log.info(f"Starting Orchestrator HTTP IPC server on dynamic port {actual_port}")
+    
+    # Print the port so the Electron host knows where to connect
+    print(json.dumps({"type": "server_started", "port": actual_port}), flush=True)
+    
+    # Keep the server running
+    await asyncio.Event().wait()
+
+def main():
+    """Main entry point - run an internal HTTP server on an ephemeral port"""
+    asyncio.run(start_server())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
