@@ -119,6 +119,21 @@ class DAGExecutor:
         self._active_tasks: Set[asyncio.Task] = set()
         self._execute_node_fn: Optional[Callable] = None
     
+    def get_downstream_nodes(self, start_id: str) -> Set[str]:
+        """
+        BFS from start_id to find all downstream (descendant) node IDs.
+        Does NOT include start_id itself.
+        """
+        visited: Set[str] = set()
+        queue: List[str] = [start_id]
+        while queue:
+            current = queue.pop(0)
+            for successor in self._adjacency.get(current, []):
+                if successor not in visited:
+                    visited.add(successor)
+                    queue.append(successor)
+        return visited
+    
     def get_topological_order(self) -> List[str]:
         """
         Compute execution order using Kahn's algorithm.
@@ -202,7 +217,9 @@ class DAGExecutor:
     async def execute(
         self,
         execute_node_fn: Callable[[DAGNode], Any],
-        parallel: bool = False
+        parallel: bool = False,
+        start_from: Optional[str] = None,
+        only_node: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute the DAG.
@@ -210,9 +227,28 @@ class DAGExecutor:
         Args:
             execute_node_fn: Async function to execute a single node
             parallel: If True, run independent nodes in parallel using an event-driven queue
+            start_from: If set, skip all nodes upstream of this node and execute only
+                        this node + its downstream descendants.
+            only_node: If set, execute ONLY this single node (all others are skipped).
         """
         self._execute_node_fn = execute_node_fn
         results: Dict[str, Any] = {}
+        
+        # --- Partial execution filtering ---
+        skip_ids: Set[str] = set()
+        if only_node:
+            # Execute only the specified node, skip everything else
+            skip_ids = set(self.nodes.keys()) - {only_node}
+        elif start_from:
+            # Execute start_from + all downstream, skip everything else
+            downstream = self.get_downstream_nodes(start_from)
+            execute_ids = {start_from} | downstream
+            skip_ids = set(self.nodes.keys()) - execute_ids
+        
+        # Mark skipped nodes
+        for sid in skip_ids:
+            self._update_state(sid, ExecutionState.SKIPPED)
+            results[sid] = {"status": "skipped", "output": "Skipped (partial execution)"}
         
         try:
             if parallel:
@@ -224,7 +260,7 @@ class DAGExecutor:
                         ready_queue.put_nowait(node_id)
                         
                 self._active_tasks.clear()
-                processed_count = 0
+                processed_count = len(skip_ids)  # Already-skipped nodes count as processed
                 total_nodes = len(self.nodes)
                 
                 if total_nodes > 0 and ready_queue.empty():
@@ -236,6 +272,14 @@ class DAGExecutor:
                     # Drain queue and start tasks
                     while not ready_queue.empty() and not (self._cancelled or error_occurred):
                         node_id = ready_queue.get_nowait()
+                        # Skip nodes already marked as SKIPPED (partial execution)
+                        if node_id in skip_ids:
+                            # Still unlock successors
+                            for successor in self._adjacency[node_id]:
+                                in_degree[successor] -= 1
+                                if in_degree[successor] == 0:
+                                    ready_queue.put_nowait(successor)
+                            continue
                         self._update_state(node_id, ExecutionState.QUEUED)
                         task = asyncio.create_task(self._execute_single_wrapper(node_id))
                         setattr(task, "node_id", node_id)
@@ -298,6 +342,10 @@ class DAGExecutor:
                 for node_id in order:
                     if self._cancelled:
                         self._update_state(node_id, ExecutionState.CANCELLED)
+                        continue
+                    
+                    # Skip nodes already marked as SKIPPED (partial execution)
+                    if node_id in skip_ids:
                         continue
                     
                     result = await self._execute_single(node_id)

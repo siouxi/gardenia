@@ -85,18 +85,26 @@ class Orchestrator:
         
         return nodes, edges
     
-    async def execute_workflow(self, workflow_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_workflow(self, workflow_data: Dict[str, Any],
+                               start_from: Optional[str] = None,
+                               only_node: Optional[str] = None) -> Dict[str, Any]:
         """
         Execute a workflow.
         
         Args:
             workflow_data: Workflow with nodes and edges
+            start_from: If set, execute only this node and its downstream descendants
+            only_node: If set, execute only this single node
         
         Returns:
             Execution results
         """
-        # Clear workflow-scope variables from previous run
-        self.registry.clear_workflow()
+        is_partial = bool(start_from or only_node)
+        
+        # Clear workflow-scope variables from previous run (skip for partial runs
+        # so upstream data remains available)
+        if not is_partial:
+            self.registry.clear_workflow()
         
         # Parse workflow
         nodes, edges = self._parse_workflow(workflow_data)
@@ -186,7 +194,10 @@ class Orchestrator:
             return result.to_dict()
         
         try:
-            results = await self._current_executor.execute(execute_node, parallel=True)
+            results = await self._current_executor.execute(
+                execute_node, parallel=True,
+                start_from=start_from, only_node=only_node
+            )
             
             # Get final variable state
             variables = self.registry.list_variables()
@@ -268,7 +279,10 @@ class Orchestrator:
         payload = msg.get("payload", {})
         
         if msg_type == "execute":
-            return await self.execute_workflow(payload)
+            start_from = payload.get("start_from")
+            only_node = payload.get("only_node")
+            return await self.execute_workflow(payload, start_from=start_from,
+                                              only_node=only_node)
             
         elif msg_type == "test_node":
             # AI Agent feedback loop: test a single node's code without entire DAG
@@ -347,16 +361,17 @@ class Orchestrator:
             return {"status": "error", "error": f"Unknown message type: {msg_type}"}
 
 
-# --- HTTP Server Setup ---
+# --- HTTP + WebSocket Server Setup ---
 import aiohttp
 from aiohttp import web
 
-# Global list of connected client queues
+# Global sets of connected client queues (SSE and WebSocket share the same queue model)
 sse_clients = set()
+ws_clients = set()
 
-# Monkey-patch _send_message so it pushes to all clients
+# Monkey-patch _send_message so it pushes to all connected clients (SSE + WS)
 def _queue_message(self, msg: Dict[str, Any]) -> None:
-    for queue in sse_clients:
+    for queue in sse_clients | ws_clients:
         try:
             queue.put_nowait(msg)
         except asyncio.QueueFull:
@@ -377,8 +392,58 @@ async def handle_post_message(request):
         log.error(f"Error processing message: {e}")
         return web.json_response({"type": "error", "error": str(e)}, status=500)
 
+async def handle_ws(request):
+    """WebSocket endpoint for real-time bidirectional communication with Electron."""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    log.debug("WebSocket client connected")
+    
+    # Create a queue for this connection
+    client_queue = asyncio.Queue(maxsize=1000)
+    ws_clients.add(client_queue)
+    
+    # Send ready signal
+    await ws.send_json({"type": "ready", "version": "1.0.0"})
+    
+    # Task to forward queued messages to the WebSocket
+    async def forward_events():
+        try:
+            while not ws.closed:
+                msg = await client_queue.get()
+                if not ws.closed:
+                    await ws.send_json(msg)
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+    
+    forward_task = asyncio.create_task(forward_events())
+    
+    try:
+        async for ws_msg in ws:
+            if ws_msg.type == aiohttp.WSMsgType.TEXT:
+                # Handle incoming messages from Electron over WebSocket
+                try:
+                    data = json.loads(ws_msg.data)
+                    orchestrator = request.app['orchestrator']
+                    result = await orchestrator.handle_message(data)
+                    await ws.send_json({"type": "response", **(result or {})})
+                except json.JSONDecodeError:
+                    await ws.send_json({"type": "error", "error": "Invalid JSON"})
+                except Exception as e:
+                    await ws.send_json({"type": "error", "error": str(e)})
+            elif ws_msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE):
+                break
+    except Exception as e:
+        log.warning(f"WebSocket error: {e}")
+    finally:
+        forward_task.cancel()
+        ws_clients.discard(client_queue)
+        log.debug("WebSocket client disconnected")
+    
+    return ws
+
 async def handle_sse(request):
-    """Server-Sent Events endpoint to stream real-time updates back to Electron."""
+    """Server-Sent Events endpoint (fallback) to stream real-time updates back to Electron."""
     response = web.StreamResponse()
     response.headers['Content-Type'] = 'text/event-stream'
     response.headers['Cache-Control'] = 'no-cache'
@@ -386,17 +451,14 @@ async def handle_sse(request):
     
     await response.prepare(request)
     
-    # Create a unique queue for this connection
     client_queue = asyncio.Queue(maxsize=1000)
     sse_clients.add(client_queue)
     
-    # Send initial ready state
     ready_msg = json.dumps({"type": "ready", "version": "1.0.0"})
     await response.write(f"data: {ready_msg}\n\n".encode('utf-8'))
     
     try:
         while True:
-            # Wait for next event
             msg = await client_queue.get()
             data_str = json.dumps(msg)
             await response.write(f"data: {data_str}\n\n".encode('utf-8'))
@@ -413,6 +475,7 @@ async def init_app():
     app = web.Application()
     app['orchestrator'] = Orchestrator()
     app.router.add_post('/message', handle_post_message)
+    app.router.add_get('/ws', handle_ws)
     app.router.add_get('/events', handle_sse)
     return app
 
