@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { Sidebar } from './components/Sidebar';
@@ -208,6 +208,65 @@ const Flow = () => {
         window.addEventListener('keydown', onUndoRedoKeyDown);
         return () => window.removeEventListener('keydown', onUndoRedoKeyDown);
     }, [handleUndo, handleRedo]);
+
+    // --- Copy/Paste ---
+    const clipboard = useRef<{ nodes: AppNode[]; edges: any[] } | null>(null);
+
+    useEffect(() => {
+        const onCopyPaste = (e: KeyboardEvent) => {
+            // Skip if user is typing in an input
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+
+            // Copy: Ctrl+C
+            if (e.ctrlKey && e.key === 'c' && !e.shiftKey) {
+                const selectedNodes = nodes.filter(n => n.selected);
+                if (selectedNodes.length === 0) return;
+                const selectedIds = new Set(selectedNodes.map(n => n.id));
+                const selectedEdges = edges.filter(e => selectedIds.has(e.source) && selectedIds.has(e.target));
+                clipboard.current = { nodes: selectedNodes, edges: selectedEdges };
+                console.log(`[Clipboard] Copied ${selectedNodes.length} nodes, ${selectedEdges.length} edges`);
+            }
+
+            // Paste: Ctrl+V
+            if (e.ctrlKey && e.key === 'v' && !e.shiftKey) {
+                if (!clipboard.current || clipboard.current.nodes.length === 0) return;
+                e.preventDefault();
+                pushSnapshot(nodes, edges, 'Paste nodes');
+
+                const idMap = new Map<string, string>();
+                const offset = 50;
+
+                const newNodes = clipboard.current.nodes.map(n => {
+                    const newId = `${n.id.split('-')[0]}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                    idMap.set(n.id, newId);
+                    return {
+                        ...n,
+                        id: newId,
+                        position: { x: n.position.x + offset, y: n.position.y + offset },
+                        selected: true,
+                        data: { ...n.data, executionState: undefined },
+                    };
+                });
+
+                const newEdges = clipboard.current.edges.map(e => ({
+                    ...e,
+                    id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    source: idMap.get(e.source) || e.source,
+                    target: idMap.get(e.target) || e.target,
+                }));
+
+                // Deselect current nodes, add new ones
+                setNodes(nds => [
+                    ...nds.map(n => ({ ...n, selected: false })),
+                    ...newNodes,
+                ]);
+                setEdges(eds => [...eds, ...newEdges]);
+            }
+        };
+
+        window.addEventListener('keydown', onCopyPaste);
+        return () => window.removeEventListener('keydown', onCopyPaste);
+    }, [nodes, edges, pushSnapshot, setNodes, setEdges]);
 
     // Attach global listeners for resize and node parameters
     useEffect(() => {
@@ -1145,6 +1204,13 @@ const Flow = () => {
                             >
                                 <Background gap={15} size={1} color="#222" />
                                 <Controls className="!bg-[#2a2a2a] !border-[#000] !fill-[#888] !rounded-[2px]" />
+                                <MiniMap
+                                    nodeStrokeColor="#333"
+                                    nodeColor="#2a2a2e"
+                                    nodeBorderRadius={4}
+                                    maskColor="rgba(0,0,0,0.7)"
+                                    style={{ backgroundColor: '#111', borderRadius: 4, border: '1px solid #333' }}
+                                />
                             </ReactFlow>
                             {contextMenu && (
                                 <NodeContextMenu

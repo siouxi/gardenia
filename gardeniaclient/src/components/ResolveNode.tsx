@@ -12,6 +12,7 @@ import {
     MachineLearningIcon,
     SequenceAnalysisIcon
 } from './BioinformaticsIcons';
+import { useWorkflowStore } from '../stores/workflowStore';
 
 const iconMap: Record<string, any> = {
     'Input/Output': InputIcon,
@@ -30,7 +31,6 @@ const iconMap: Record<string, any> = {
 const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialValue: any, nodeId: string }) => {
     const [value, setValue] = React.useState(initialValue);
 
-    // Sync with external changes (e.g. undo/redo)
     React.useEffect(() => {
         setValue(initialValue);
     }, [initialValue]);
@@ -42,7 +42,6 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         window.dispatchEvent(event);
     };
 
-    // Text / String / Number
     if (param.type === 'string' || param.type === 'text' || param.type === 'number') {
         return (
             <div className="flex flex-col gap-1">
@@ -62,7 +61,7 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
                             commitChange(val);
                             (e.target as HTMLInputElement).blur();
                         }
-                        e.stopPropagation(); // Prevent interfering with React Flow shortcuts
+                        e.stopPropagation();
                     }}
                     placeholder={String(param.default || '')}
                 />
@@ -70,7 +69,6 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         );
     }
 
-    // Select / Dropdown
     if (param.type === 'select') {
         return (
             <div className="flex flex-col gap-1">
@@ -92,7 +90,6 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         );
     }
 
-    // Slider
     if (param.type === 'slider') {
         return (
             <div className="flex flex-col gap-1">
@@ -116,7 +113,6 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         );
     }
 
-    // Boolean / Toggle
     if (param.type === 'boolean' || param.type === 'toggle') {
         return (
             <div className="flex items-center gap-2 mt-1">
@@ -136,7 +132,6 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
         );
     }
 
-    // File / Save File
     if (param.type === 'file' || param.type === 'save-file') {
         const fileName = value ? String(value).split(/[/\\]/).pop() : (param.type === 'save-file' ? 'Save As...' : 'Select File');
 
@@ -182,23 +177,31 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
     return null;
 };
 
+// Format elapsed time
+const formatTime = (ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+};
+
 export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
     const Icon = iconMap[String(data.category)] || iconMap['QC'];
     const toolData = data.toolData as any;
 
-    // Default to at least one IO if missing definition, for backward compat or generic nodes
+    // Get execution state from store for timing and output
+    const nodeExecState = useWorkflowStore(state => state.nodeStates.get(id));
+    const elapsedTime = nodeExecState?.startTime && nodeExecState?.endTime
+        ? nodeExecState.endTime - nodeExecState.startTime
+        : null;
+    const outputPreview = nodeExecState?.output
+        ? nodeExecState.output.trim().split('\n').filter(Boolean).slice(-2).join('\n')
+        : null;
+
     const inputs = toolData?.inputs || [];
-
-    // Explicitly handle outputs. If defined (even if empty), use them.
     const outputs = toolData?.outputs || [];
-
-    // Fallback for generic/legacy nodes
-    // Only show default IO if not explicitly defined (undefined).
-    // If explicitly defined as [] (empty), do not show default.
     const showDefaultInput = (!toolData?.inputs) && data.type !== 'input';
     const showDefaultOutput = (!toolData?.outputs);
 
-    // Determine border color based on execution state
     const getExecutionStateStyle = () => {
         switch (data.executionState) {
             case 'running':
@@ -225,18 +228,26 @@ export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
                         {String(data.label)}
                     </span>
                 </div>
-                {/* Language Badge */}
-                {data.toolId !== 'flow-start' && data.toolId !== 'flow-end' && (
-                    <div className={`
-                        px-1.5 py-0.5 rounded-[2px] text-[9px] font-bold tracking-wider
-                        ${data.language === 'r'
-                            ? 'bg-[#1e3a8a] text-blue-200 border border-[#3b82f6]/30'
-                            : 'bg-[#3f3f46] text-yellow-200 border border-yellow-500/30'
-                        }
-                    `}>
-                        {data.language === 'r' ? 'R' : 'PY'}
-                    </div>
-                )}
+                <div className="flex items-center gap-1.5">
+                    {/* Execution Timing */}
+                    {elapsedTime !== null && data.executionState === 'success' && (
+                        <span className="text-[9px] text-emerald-400/70 font-mono">
+                            {formatTime(elapsedTime)}
+                        </span>
+                    )}
+                    {/* Language Badge */}
+                    {data.toolId !== 'flow-start' && data.toolId !== 'flow-end' && (
+                        <div className={`
+                            px-1.5 py-0.5 rounded-[2px] text-[9px] font-bold tracking-wider
+                            ${data.language === 'r'
+                                ? 'bg-[#1e3a8a] text-blue-200 border border-[#3b82f6]/30'
+                                : 'bg-[#3f3f46] text-yellow-200 border border-yellow-500/30'
+                            }
+                        `}>
+                            {data.language === 'r' ? 'R' : 'PY'}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Content Body with IO Ports */}
@@ -266,7 +277,7 @@ export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
                     )}
                 </div>
 
-                {/* Parameters (File Picker, etc.) */}
+                {/* Parameters */}
                 {toolData?.parameters && toolData.parameters.length > 0 && (
                     <div className="py-2 space-y-2">
                         {toolData.parameters.map((param: any) => (
@@ -280,7 +291,6 @@ export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
                     </div>
                 )}
 
-                {/* Divider if both exist */}
                 {(inputs.length > 0 && outputs.length > 0) && <div className="h-2" />}
 
                 {/* Outputs Stack */}
@@ -308,6 +318,15 @@ export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
                     )}
                 </div>
             </div>
+
+            {/* Inline Output Preview */}
+            {outputPreview && (data.executionState === 'success' || data.executionState === 'error') && (
+                <div className="border-t border-[#2a2a2a] px-2 py-1.5 bg-[#111] rounded-b-[5px]">
+                    <pre className="text-[9px] text-[#888] font-mono leading-tight max-h-[32px] overflow-hidden whitespace-pre-wrap break-all">
+                        {outputPreview.slice(0, 120)}{outputPreview.length > 120 ? '…' : ''}
+                    </pre>
+                </div>
+            )}
         </div>
     );
 });
