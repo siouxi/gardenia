@@ -4,7 +4,7 @@ const tool: ToolDefinition = {
     id: 'csv-input',
     name: 'CSV Input',
     description: 'Load a CSV file from the local file system using Pandas',
-    category: 'Input',
+    category: 'Input/Output',
     version: '1.0.0',
     inputs: [
         { name: 'trigger', type: 'signal', description: 'Trigger to execute this node' }

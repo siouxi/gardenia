@@ -12,6 +12,7 @@
     },
     "dependencies": {
         "@types/dagre": "^0.7.53",
+        "@types/ws": "^8.18.1",
         "@xyflow/react": "^12.0.0-next.14",
         "clsx": "^2.1.0",
         "dagre": "^0.8.5",
@@ -22,6 +23,7 @@
         "react-dom": "^18.2.0",
         "react-simple-code-editor": "^0.14.1",
         "tailwind-merge": "^2.2.2",
+        "ws": "^8.19.0",
         "zustand": "^4.5.2"
     },
     "devDependencies": {
@@ -35,7 +37,7 @@
         "autoprefixer": "^10.4.19",
         "concurrently": "^8.2.2",
         "cross-env": "^7.0.3",
-        "electron": "^29.1.5",
+        "electron": "^29.4.6",
         "electron-builder": "^24.13.3",
         "eslint": "^8.57.0",
         "eslint-plugin-react-refresh": "^0.4.6",

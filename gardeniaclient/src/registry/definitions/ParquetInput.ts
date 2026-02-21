@@ -4,7 +4,7 @@ const tool: ToolDefinition = {
     id: 'parquet-input',
     name: 'Parquet Input',
     description: 'Load a Parquet file into a DataFrame',
-    category: 'Input',
+    category: 'Input/Output',
     version: '1.0.0',
     inputs: [
         { name: 'trigger', type: 'signal', description: 'Trigger to execute this node' }

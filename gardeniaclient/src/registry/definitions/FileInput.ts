@@ -4,7 +4,7 @@ const tool: ToolDefinition = {
     id: 'file-input',
     name: 'File Input',
     description: 'Load raw data files into the workflow',
-    category: 'Input',
+    category: 'Input/Output',
     version: '1.0.0',
     inputs: [],
     outputs: [

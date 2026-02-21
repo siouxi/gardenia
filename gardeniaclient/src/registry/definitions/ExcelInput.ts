@@ -4,7 +4,7 @@ const tool: ToolDefinition = {
     id: 'excel-input',
     name: 'Excel Input',
     description: 'Load an Excel file (.xlsx) into a DataFrame',
-    category: 'Input',
+    category: 'Input/Output',
     version: '1.0.0',
     inputs: [
         { name: 'trigger', type: 'signal', description: 'Trigger to execute this node' }

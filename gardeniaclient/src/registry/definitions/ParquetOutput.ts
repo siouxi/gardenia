@@ -4,7 +4,7 @@ const tool: ToolDefinition = {
     id: 'parquet-output',
     name: 'Parquet Output',
     description: 'Save DataFrame to a Parquet file',
-    category: 'Utilities',
+    category: 'Input/Output',
     version: '1.0.0',
     inputs: [
         { name: 'data', type: 'dataset', description: 'DataFrame to save' }

@@ -1,8 +1,12 @@
 export type ToolCategory =
-    | 'Input'
-    | 'QC'
-    | 'Preprocessing'
+    | 'Input/Output'
+    | 'Data Wrangling'
+    | 'Quality Control'
+    | 'Normalization'
     | 'Statistical Analysis'
+    | 'Differential Expression'
+    | 'Machine Learning'
+    | 'Sequence Analysis'
     | 'Visualization'
     | 'Utilities';
 

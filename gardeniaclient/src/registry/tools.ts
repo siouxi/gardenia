@@ -19,7 +19,11 @@ export const ToolRegistry = {
 
     getCategories: (): string[] => {
         // Enforce the specific order from the original design
-        const order = ['Input', 'QC', 'Preprocessing', 'Statistical Analysis', 'Visualization', 'Utilities'];
+        const order = [
+            'Input/Output', 'Data Wrangling', 'Quality Control', 'Normalization',
+            'Statistical Analysis', 'Differential Expression', 'Machine Learning',
+            'Sequence Analysis', 'Visualization', 'Utilities'
+        ];
         const available = new Set(allTools.map(tool => tool.category));
         return order.filter(c => available.has(c as ToolCategory));
     }

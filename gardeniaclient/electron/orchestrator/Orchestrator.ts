@@ -26,6 +26,9 @@ import {
 
 import http from 'http';
 
+// Use require() instead of import to avoid interfering with Electron's module resolution
+const WebSocket = require('ws');
+
 export class WorkflowOrchestrator extends EventEmitter {
     private pythonProcess: ChildProcess | null = null;
     private isReady: boolean = false;
@@ -33,7 +36,7 @@ export class WorkflowOrchestrator extends EventEmitter {
     private currentPromise: { resolve: Function; reject: Function } | null = null;
     private activePythonPath: string;
     private serverPort: number | null = null;
-    private sseRequest: http.ClientRequest | null = null;
+    private ws: any = null;
     private connectionAttempts: number = 0;
 
     constructor(pythonPath: string = 'python3') {
@@ -77,8 +80,8 @@ export class WorkflowOrchestrator extends EventEmitter {
                             const msg = JSON.parse(line.trim());
                             if (msg.type === 'server_started' && msg.port) {
                                 this.serverPort = msg.port;
-                                console.log(`[Orchestrator] HTTP Server started on port ${this.serverPort}`);
-                                this.connectSSE();
+                                console.log(`[Orchestrator] Server started on port ${this.serverPort}`);
+                                this.connectWebSocket();
                             } else {
                                 // Forward other standard prints to console
                                 console.log(`[Orchestrator Log]`, line.trim());
@@ -107,7 +110,7 @@ export class WorkflowOrchestrator extends EventEmitter {
                     this.emit('close', code);
                 });
 
-                // Wait for ready signal via SSE
+                // Wait for ready signal via WebSocket
                 const readyTimeout = setTimeout(() => {
                     if (!this.isReady) {
                         console.error('Orchestrator failed to start (timeout)');
@@ -130,75 +133,63 @@ export class WorkflowOrchestrator extends EventEmitter {
         });
     }
 
-    private connectSSE(): void {
+    /**
+     * Connect to Python orchestrator via WebSocket (primary channel)
+     */
+    private connectWebSocket(): void {
         if (!this.serverPort) return;
 
-        const options = {
-            hostname: '127.0.0.1',
-            port: this.serverPort,
-            path: '/events',
-            method: 'GET',
-            headers: {
-                'Accept': 'text/event-stream'
-            }
-        };
+        const url = `ws://127.0.0.1:${this.serverPort}/ws`;
+        console.log(`[Orchestrator] Connecting WebSocket to ${url}...`);
 
-        this.sseRequest = http.request(options, (res) => {
-            if (res.statusCode !== 200) {
-                console.error(`SSE Connection failed: ${res.statusCode}`);
-                this.retrySSE();
-                return;
-            }
+        this.ws = new WebSocket(url);
 
-            console.log(`[Orchestrator] SSE stream connected.`);
+        this.ws.on('open', () => {
+            console.log('[Orchestrator] WebSocket connected');
             this.connectionAttempts = 0;
-            let buffer = '';
+        });
 
-            res.on('data', (chunk) => {
-                const lines = chunk.toString().split('\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const dataVal = line.substring(6).trim();
-                        if (dataVal) {
-                            try {
-                                const event = JSON.parse(dataVal) as OrchestratorEvent;
-                                this.handleEvent(event);
-                            } catch (e) {
-                                console.error('Failed to parse SSE event:', dataVal);
-                            }
-                        }
-                    }
+        this.ws.on('message', (data: any) => {
+            try {
+                const event = JSON.parse(data.toString()) as OrchestratorEvent;
+
+                // Check if this is a response to a pending request
+                if (event.type === 'response') {
+                    // Route to the appropriate pending request
+                    this.handleEvent(event);
+                } else {
+                    this.handleEvent(event);
                 }
-            });
-
-            res.on('end', () => {
-                console.log('[Orchestrator] SSE stream ended.');
-                this.retrySSE();
-            });
+            } catch (e) {
+                console.error('[Orchestrator] Failed to parse WS message:', data.toString());
+            }
         });
 
-        this.sseRequest.on('error', (e) => {
-            console.error(`[Orchestrator] SSE Request Error: ${e.message}`);
-            this.retrySSE();
+        this.ws.on('close', () => {
+            console.log('[Orchestrator] WebSocket closed');
+            this.retryWebSocket();
         });
 
-        this.sseRequest.end();
+        this.ws.on('error', (err: any) => {
+            console.error(`[Orchestrator] WebSocket error: ${err.message}`);
+            this.retryWebSocket();
+        });
     }
 
-    private retrySSE(): void {
+    private retryWebSocket(): void {
         this.connectionAttempts++;
         if (this.connectionAttempts <= 5 && this.pythonProcess && !this.pythonProcess.killed) {
-            console.log(`[Orchestrator] Retrying SSE connection in 1s (Attempt ${this.connectionAttempts})...`);
-            setTimeout(() => this.connectSSE(), 1000);
+            console.log(`[Orchestrator] Retrying WebSocket in 1s (Attempt ${this.connectionAttempts})...`);
+            setTimeout(() => this.connectWebSocket(), 1000);
         } else {
-            console.error(`[Orchestrator] Max SSE retries reached or process dead.`);
+            console.error(`[Orchestrator] Max WebSocket retries reached or process dead.`);
         }
     }
 
     private cleanup(): void {
-        if (this.sseRequest) {
-            this.sseRequest.destroy();
-            this.sseRequest = null;
+        if (this.ws) {
+            try { this.ws.close(); } catch (e) { /* ignore */ }
+            this.ws = null;
         }
         this.pythonProcess = null;
         this.isReady = false;
@@ -230,6 +221,10 @@ export class WorkflowOrchestrator extends EventEmitter {
         switch (event.type) {
             case 'ready':
                 this.emit('ready', event);
+                break;
+
+            case 'response':
+                // Response type events handled by HTTP POST sendMessage
                 break;
 
             case 'state_change':
@@ -310,12 +305,14 @@ export class WorkflowOrchestrator extends EventEmitter {
     }
 
     /**
-     * Send an HTTP POST message to the Python orchestrator
+     * Send a message to the Python orchestrator via HTTP POST.
+     * WebSocket is used for streaming events (state_change, output, etc.)
+     * but request-response calls use HTTP for reliable 1:1 matching.
      */
     private sendMessage(message: OrchestratorMessage): Promise<OrchestratorEvent> {
         return new Promise((resolve, reject) => {
             if (!this.serverPort) {
-                reject(new Error('Orchestrator HTTP server not started'));
+                reject(new Error('Orchestrator server not started'));
                 return;
             }
 

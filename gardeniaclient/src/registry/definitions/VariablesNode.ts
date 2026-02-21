@@ -4,7 +4,7 @@ const tool: ToolDefinition = {
     id: 'variables',
     name: 'Variables',
     description: 'Splits a dataset into individual column variables for downstream processing',
-    category: 'Preprocessing',
+    category: 'Data Wrangling',
     version: '1.0.0',
     inputs: [
         { name: 'data', type: 'dataset', description: 'Input dataset to split into variables' }
