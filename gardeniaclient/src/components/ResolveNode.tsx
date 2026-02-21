@@ -320,7 +320,7 @@ export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
             </div>
 
             {/* Inline Output Preview */}
-            {outputPreview && (data.executionState === 'success' || data.executionState === 'error') && (
+            {outputPreview && (
                 <div className="border-t border-[#2a2a2a] px-2 py-1.5 bg-[#111] rounded-b-[5px]">
                     <pre className="text-[9px] text-[#888] font-mono leading-tight max-h-[32px] overflow-hidden whitespace-pre-wrap break-all">
                         {outputPreview.slice(0, 120)}{outputPreview.length > 120 ? '…' : ''}
