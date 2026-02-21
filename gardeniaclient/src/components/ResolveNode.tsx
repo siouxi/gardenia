@@ -3,21 +3,25 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import {
     InputIcon,
     QCIcon,
-    PreprocessingIcon,
     StatisticalAnalysisIcon,
     VisualizationIcon,
-    UtilitiesIcon
+    UtilitiesIcon,
+    DataWranglingIcon,
+    NormalizationIcon,
+    DifferentialExpressionIcon,
+    MachineLearningIcon,
+    SequenceAnalysisIcon
 } from './BioinformaticsIcons';
 
 const iconMap: Record<string, any> = {
     'Input/Output': InputIcon,
-    'Data Wrangling': PreprocessingIcon,
+    'Data Wrangling': DataWranglingIcon,
     'Quality Control': QCIcon,
-    'Normalization': PreprocessingIcon,
+    'Normalization': NormalizationIcon,
     'Statistical Analysis': StatisticalAnalysisIcon,
-    'Differential Expression': StatisticalAnalysisIcon,
-    'Machine Learning': StatisticalAnalysisIcon,
-    'Sequence Analysis': QCIcon,
+    'Differential Expression': DifferentialExpressionIcon,
+    'Machine Learning': MachineLearningIcon,
+    'Sequence Analysis': SequenceAnalysisIcon,
     'Visualization': VisualizationIcon,
     'Utilities': UtilitiesIcon
 };

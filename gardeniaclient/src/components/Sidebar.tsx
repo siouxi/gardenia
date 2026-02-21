@@ -3,19 +3,27 @@ import { Search } from 'lucide-react';
 import {
     InputIcon,
     QCIcon,
-    PreprocessingIcon,
     StatisticalAnalysisIcon,
     VisualizationIcon,
-    UtilitiesIcon
+    UtilitiesIcon,
+    DataWranglingIcon,
+    NormalizationIcon,
+    DifferentialExpressionIcon,
+    MachineLearningIcon,
+    SequenceAnalysisIcon
 } from './BioinformaticsIcons';
 import { ToolRegistry } from '../registry/tools';
 
 // Icon mapping
 const CategoryIcons: Record<string, React.FC<{ size?: number; className?: string }>> = {
-    'Input': InputIcon,
-    'QC': QCIcon,
-    'Preprocessing': PreprocessingIcon,
+    'Input/Output': InputIcon,
+    'Data Wrangling': DataWranglingIcon,
+    'Quality Control': QCIcon,
+    'Normalization': NormalizationIcon,
     'Statistical Analysis': StatisticalAnalysisIcon,
+    'Differential Expression': DifferentialExpressionIcon,
+    'Machine Learning': MachineLearningIcon,
+    'Sequence Analysis': SequenceAnalysisIcon,
     'Visualization': VisualizationIcon,
     'Utilities': UtilitiesIcon
 };
