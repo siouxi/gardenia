@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { Sidebar } from './components/Sidebar';
@@ -11,6 +11,7 @@ import { ResolveNode } from './components/ResolveNode';
 import { PostItNode } from './components/PostItNode';
 import { CodeEditor } from './components/CodeEditor';
 import { NodeContextMenu } from './components/NodeContextMenu';
+import { CustomMiniMap } from './components/CustomMiniMap';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { PackageManager } from './components/PackageManager';
@@ -967,39 +968,6 @@ const Flow = () => {
     const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
     const [showMiniMap, setShowMiniMap] = useState(true);
 
-    // MiniMap node color based on category and execution state
-    const miniMapNodeColor = useCallback((node: AppNode) => {
-        // Execution state takes priority
-        if (node.data.executionState === 'running') return '#eab308';
-        if (node.data.executionState === 'success') return '#22c55e';
-        if (node.data.executionState === 'error') return '#ef4444';
-        if (node.data.executionState === 'skipped') return '#6b7280';
-
-        // Category colors
-        const category = String(node.data.category || '');
-        const categoryColors: Record<string, string> = {
-            'Utilities': '#34d399',
-            'Input/Output': '#60a5fa',
-            'Data Wrangling': '#a78bfa',
-            'Quality Control': '#f87171',
-            'Normalization': '#38bdf8',
-            'Statistical Analysis': '#818cf8',
-            'Differential Expression': '#fb923c',
-            'Machine Learning': '#c084fc',
-            'Sequence Analysis': '#2dd4bf',
-            'Visualization': '#fbbf24',
-        };
-        return categoryColors[category] || '#4b5563';
-    }, []);
-
-    // Click minimap node → center viewport on it
-    const { setCenter } = useReactFlow();
-    const onMiniMapNodeClick = useCallback((_: any, node: AppNode) => {
-        const x = node.position.x + 90;
-        const y = node.position.y + 50;
-        setCenter(x, y, { zoom: 1.5, duration: 400 });
-    }, [setCenter]);
-
     return (
         <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#18181b] text-[#ccc] font-sans">
             {/* Menu Bar */}
@@ -1238,30 +1206,14 @@ const Flow = () => {
                             >
                                 <Background gap={15} size={1} color="#222" />
                                 <Controls className="!bg-[#2a2a2a] !border-[#000] !fill-[#888] !rounded-[2px]" />
-                                {showMiniMap && (
-                                    <MiniMap
-                                        nodeStrokeColor="#222"
-                                        nodeColor={miniMapNodeColor as any}
-                                        nodeBorderRadius={4}
-                                        maskColor="rgba(0,0,0,0.7)"
-                                        zoomable
-                                        pannable
-                                        onNodeClick={onMiniMapNodeClick as any}
-                                        style={{
-                                            backgroundColor: '#0a0a0a',
-                                            borderRadius: 6,
-                                            border: '1px solid #333',
-                                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                                        }}
-                                    />
-                                )}
+                                {showMiniMap && <CustomMiniMap />}
                                 {/* MiniMap toggle button */}
                                 <button
                                     onClick={() => setShowMiniMap(!showMiniMap)}
-                                    className={`absolute bottom-3 right-3 z-10 w-7 h-7 rounded-md flex items-center justify-center transition-all text-xs
+                                    className={`absolute z-10 w-7 h-7 rounded-md flex items-center justify-center transition-all text-xs
                                         ${showMiniMap
-                                            ? 'bg-transparent text-[#555] hover:text-[#aaa] bottom-[170px]'
-                                            : 'bg-[#2a2a2e] border border-[#444] text-[#888] hover:text-white hover:border-[#34d399] shadow-lg'
+                                            ? 'bottom-[165px] right-3 bg-transparent text-[#555] hover:text-[#aaa]'
+                                            : 'bottom-3 right-3 bg-[#2a2a2e] border border-[#444] text-[#888] hover:text-white hover:border-[#34d399] shadow-lg'
                                         }`}
                                     title={showMiniMap ? 'Hide minimap' : 'Show minimap'}
                                 >
