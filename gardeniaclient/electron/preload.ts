@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // NEW: DAG-based Workflow Orchestrator APIs
     executeWorkflow: (workflowData: any) => ipcRenderer.invoke('workflow:execute', workflowData),
+    executeWorkflowFrom: (workflowData: any, nodeId: string) => ipcRenderer.invoke('workflow:execute-from', workflowData, nodeId),
+    executeWorkflowOnly: (workflowData: any, nodeId: string) => ipcRenderer.invoke('workflow:execute-only', workflowData, nodeId),
     cancelWorkflow: () => ipcRenderer.invoke('workflow:cancel'),
     forceStopWorkflow: () => ipcRenderer.invoke('workflow:force-stop'),
     getWorkflowVariables: () => ipcRenderer.invoke('workflow:variables'),

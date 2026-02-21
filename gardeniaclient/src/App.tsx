@@ -10,6 +10,7 @@ import { GardeniasLogo } from './components/GardeniasLogo';
 import { ResolveNode } from './components/ResolveNode';
 import { PostItNode } from './components/PostItNode';
 import { CodeEditor } from './components/CodeEditor';
+import { NodeContextMenu } from './components/NodeContextMenu';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { PackageManager } from './components/PackageManager';
@@ -194,6 +195,7 @@ const Flow = () => {
     }, [isResizingLeft, isResizingRight, onMouseMove, stopResizing, setNodes]);
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null);
 
     // Workflow orchestrator state (used for execution visualization)
     // const workflowStatus = useWorkflowStore((state) => state.status);
@@ -351,6 +353,15 @@ const Flow = () => {
 
     const onPaneClick = useCallback(() => {
         setSelectedNodeId(null);
+        setContextMenu(null);
+    }, []);
+
+    // Right-click context menu on nodes
+    const onNodeContextMenu = useCallback((event: React.MouseEvent, node: AppNode) => {
+        event.preventDefault();
+        // Don't show for start/end/postit nodes
+        if (node.data.toolId === 'flow-start' || node.data.toolId === 'flow-end' || node.type === 'postit') return;
+        setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY });
     }, []);
 
     const updateNodeData = useCallback((nodeId: string, newData: NodeData) => {
@@ -375,6 +386,75 @@ const Flow = () => {
             selectedNode.data.toolId === 'flow-start' ||
             selectedNode.data.toolId === 'flow-end';
     }, [selectedNode]);
+
+    // --- Workflow data builder (reused by full, partial, and only execution) ---
+    const buildWorkflowData = useCallback(() => {
+        return {
+            nodes: nodes.map(n => ({
+                id: n.id,
+                type: n.type,
+                data: {
+                    label: n.data.label,
+                    toolId: n.data.toolId,
+                    code: n.data.code || '',
+                    language: n.data.language || 'python',
+                    parameterValues: n.data.parameterValues || {},
+                }
+            })),
+            edges: edges.map(e => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle,
+                targetHandle: e.targetHandle,
+            })),
+        };
+    }, [nodes, edges]);
+
+    // --- Partial execution handlers ---
+    const executeFromNode = useCallback(async (nodeId: string) => {
+        log(`=== PARTIAL EXECUTION: Run from ${nodeId} ===`);
+        useWorkflowStore.getState().reset();
+        useWorkflowStore.getState().setStatus('running');
+        const api = (window as any).electronAPI;
+        if (!api?.executeWorkflowFrom) { log('❌ executeWorkflowFrom API not available'); return; }
+        try {
+            const result = await api.executeWorkflowFrom(buildWorkflowData(), nodeId);
+            if (result.status === 'success') log('=== PARTIAL EXECUTION COMPLETED ===');
+            else log(`❌ Partial execution failed: ${result.error}`);
+        } catch (error) {
+            log(`❌ Partial execution error: ${error}`);
+        } finally {
+            setTimeout(() => {
+                setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, executionState: undefined } })));
+            }, 2000);
+        }
+    }, [buildWorkflowData, setNodes]);
+
+    const executeOnlyNode = useCallback(async (nodeId: string) => {
+        log(`=== SINGLE NODE EXECUTION: ${nodeId} ===`);
+        useWorkflowStore.getState().reset();
+        useWorkflowStore.getState().setStatus('running');
+        const api = (window as any).electronAPI;
+        if (!api?.executeWorkflowOnly) { log('❌ executeWorkflowOnly API not available'); return; }
+        try {
+            const result = await api.executeWorkflowOnly(buildWorkflowData(), nodeId);
+            if (result.status === 'success') log('=== SINGLE NODE EXECUTION COMPLETED ===');
+            else log(`❌ Single node execution failed: ${result.error}`);
+        } catch (error) {
+            log(`❌ Single node execution error: ${error}`);
+        } finally {
+            setTimeout(() => {
+                setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, executionState: undefined } })));
+            }, 2000);
+        }
+    }, [buildWorkflowData, setNodes]);
+
+    const deleteNode = useCallback((nodeId: string) => {
+        pushSnapshot(nodes, edges, 'Delete node');
+        setNodes(nds => nds.filter(n => n.id !== nodeId));
+        setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
+    }, [pushSnapshot, nodes, edges, setNodes, setEdges]);
 
     const runWorkflow = async () => {
         log('=== WORKFLOW EXECUTION STARTED ===');
@@ -445,27 +525,7 @@ const Flow = () => {
             useWorkflowStore.getState().reset();
             useWorkflowStore.getState().setStatus('running');
 
-            // Prepare workflow data for DAG engine
-            const workflowData = {
-                nodes: nodes.map(n => ({
-                    id: n.id,
-                    type: n.type,
-                    data: {
-                        label: n.data.label,
-                        toolId: n.data.toolId,
-                        code: n.data.code || '',
-                        language: n.data.language || 'python',
-                        parameterValues: n.data.parameterValues || {},
-                    }
-                })),
-                edges: edges.map(e => ({
-                    id: e.id,
-                    source: e.source,
-                    target: e.target,
-                    sourceHandle: e.sourceHandle,
-                    targetHandle: e.targetHandle,
-                })),
-            };
+            const workflowData = buildWorkflowData();
 
             log('[DAG Engine] Sending workflow for execution...');
 
@@ -932,6 +992,7 @@ const Flow = () => {
                                 onConnect={onConnect}
                                 onNodeClick={onNodeClick}
                                 onNodeDoubleClick={onNodeDoubleClick}
+                                onNodeContextMenu={onNodeContextMenu}
                                 onPaneClick={onPaneClick}
                                 nodeTypes={nodeTypes}
                                 fitView
@@ -941,6 +1002,18 @@ const Flow = () => {
                                 <Background gap={15} size={1} color="#222" />
                                 <Controls className="!bg-[#2a2a2a] !border-[#000] !fill-[#888] !rounded-[2px]" />
                             </ReactFlow>
+                            {contextMenu && (
+                                <NodeContextMenu
+                                    nodeId={contextMenu.nodeId}
+                                    nodeLabel={nodes.find(n => n.id === contextMenu.nodeId)?.data.label || 'Node'}
+                                    x={contextMenu.x}
+                                    y={contextMenu.y}
+                                    onRunFrom={executeFromNode}
+                                    onRunOnly={executeOnlyNode}
+                                    onDelete={deleteNode}
+                                    onClose={() => setContextMenu(null)}
+                                />
+                            )}
                         </div>
                     )}
 

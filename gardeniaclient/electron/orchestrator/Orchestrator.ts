@@ -383,6 +383,58 @@ export class WorkflowOrchestrator extends EventEmitter {
     }
 
     /**
+     * Execute a workflow starting from a specific node (node + all downstream)
+     */
+    async executeFrom(workflow: Workflow, nodeId: string): Promise<OrchestratorEvent> {
+        this.executionState = {
+            workflowId: `wf-partial-${Date.now()}`,
+            status: 'running',
+            nodeStates: new Map(),
+            startTime: Date.now(),
+        };
+
+        for (const node of workflow.nodes) {
+            this.executionState.nodeStates.set(node.id, {
+                nodeId: node.id,
+                state: 'pending',
+            });
+        }
+
+        this.emit('executionStart', this.executionState);
+
+        return this.sendMessage({
+            type: 'execute',
+            payload: { ...workflow, start_from: nodeId } as any,
+        });
+    }
+
+    /**
+     * Execute only a single node (using cached upstream data)
+     */
+    async executeOnly(workflow: Workflow, nodeId: string): Promise<OrchestratorEvent> {
+        this.executionState = {
+            workflowId: `wf-only-${Date.now()}`,
+            status: 'running',
+            nodeStates: new Map(),
+            startTime: Date.now(),
+        };
+
+        for (const node of workflow.nodes) {
+            this.executionState.nodeStates.set(node.id, {
+                nodeId: node.id,
+                state: 'pending',
+            });
+        }
+
+        this.emit('executionStart', this.executionState);
+
+        return this.sendMessage({
+            type: 'execute',
+            payload: { ...workflow, only_node: nodeId } as any,
+        });
+    }
+
+    /**
      * Cancel current execution
      */
     async cancel(): Promise<void> {

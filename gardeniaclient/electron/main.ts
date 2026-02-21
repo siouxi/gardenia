@@ -332,6 +332,28 @@ app.on('ready', () => {
         }
     });
 
+    ipcMain.handle('workflow:execute-from', async (event, workflowData, nodeId) => {
+        console.log('DAG Execute from node:', nodeId);
+        try {
+            const result = await orchestrator.executeFrom(workflowData, nodeId);
+            return { status: 'success', result };
+        } catch (error) {
+            console.error('Partial execution error:', error);
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('workflow:execute-only', async (event, workflowData, nodeId) => {
+        console.log('DAG Execute only node:', nodeId);
+        try {
+            const result = await orchestrator.executeOnly(workflowData, nodeId);
+            return { status: 'success', result };
+        } catch (error) {
+            console.error('Single node execution error:', error);
+            return { status: 'error', error: String(error) };
+        }
+    });
+
     ipcMain.handle('workflow:cancel', async () => {
         await orchestrator.cancel();
         return { status: 'cancelled' };
