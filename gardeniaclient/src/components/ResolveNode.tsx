@@ -10,10 +10,14 @@ import {
 } from './BioinformaticsIcons';
 
 const iconMap: Record<string, any> = {
-    'Input': InputIcon,
-    'QC': QCIcon,
-    'Preprocessing': PreprocessingIcon,
+    'Input/Output': InputIcon,
+    'Data Wrangling': PreprocessingIcon,
+    'Quality Control': QCIcon,
+    'Normalization': PreprocessingIcon,
     'Statistical Analysis': StatisticalAnalysisIcon,
+    'Differential Expression': StatisticalAnalysisIcon,
+    'Machine Learning': StatisticalAnalysisIcon,
+    'Sequence Analysis': QCIcon,
     'Visualization': VisualizationIcon,
     'Utilities': UtilitiesIcon
 };
@@ -41,7 +45,7 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
                 <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
                 <input
                     type={param.type === 'number' ? 'number' : 'text'}
-                    className="bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
+                    className="nodrag nopan bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onBlur={() => {
@@ -68,8 +72,9 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
             <div className="flex flex-col gap-1">
                 <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
                 <select
-                    className="bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
+                    className="nodrag nopan bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
                     value={value}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onChange={(e) => {
                         setValue(e.target.value);
                         commitChange(e.target.value);
@@ -96,8 +101,9 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
                     min={param.min ?? 0}
                     max={param.max ?? 100}
                     step={param.step ?? 1}
-                    className="w-full h-1 bg-[#404040] rounded-lg appearance-none cursor-pointer accent-[#34d399]"
+                    className="nodrag nopan w-full h-1 bg-[#404040] rounded-lg appearance-none cursor-pointer accent-[#34d399]"
                     value={value}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onChange={(e) => setValue(parseFloat(e.target.value))}
                     onMouseUp={() => commitChange(parseFloat(value))}
                     onTouchEnd={() => commitChange(parseFloat(value))}
@@ -112,8 +118,9 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
             <div className="flex items-center gap-2 mt-1">
                 <input
                     type="checkbox"
-                    className="rounded border-[#404040] bg-[#2a2a2a] text-[#34d399] focus:ring-0 w-3 h-3"
+                    className="nodrag nopan rounded border-[#404040] bg-[#2a2a2a] text-[#34d399] focus:ring-0 w-3 h-3"
                     checked={Boolean(value)}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onChange={(e) => {
                         const newVal = e.target.checked;
                         setValue(newVal);
@@ -158,7 +165,7 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
                 <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
                 <button
                     onClick={handleFileClick}
-                    className="bg-[#2a2a2a] hover:bg-[#333] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] flex items-center gap-2 transition-colors truncate w-full text-left"
+                    className="nodrag nopan bg-[#2a2a2a] hover:bg-[#333] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] flex items-center gap-2 transition-colors truncate w-full text-left"
                     title={String(value)}
                 >
                     <span className="truncate flex-1">{fileName}</span>
