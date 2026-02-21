@@ -95,7 +95,7 @@ export class WorkflowOrchestrator extends EventEmitter {
 
                 // Handle stderr (logs)
                 this.pythonProcess.stderr!.on('data', (chunk: Buffer) => {
-                    console.error('[Orchestrator Error]', chunk.toString().trim());
+                    console.error('[Orchestrator]', chunk.toString().trim());
                 });
 
                 this.pythonProcess.on('error', (err) => {
