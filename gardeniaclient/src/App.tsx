@@ -107,9 +107,41 @@ const Flow = () => {
     // Attach global listeners
     // Moved below useNodesState
 
+    // --- Workflow Auto-Persistence ---
+    const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved');
+    const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isInitialized = useRef(false);
 
-    const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    // Restore from localStorage on mount
+    const getInitialNodes = (): AppNode[] => {
+        try {
+            const saved = localStorage.getItem('gardenia:autosave');
+            if (saved) {
+                const data = JSON.parse(saved);
+                if (data.nodes?.length > 0) {
+                    console.log(`[AutoSave] Restored ${data.nodes.length} nodes, ${data.edges?.length || 0} edges`);
+                    return data.nodes;
+                }
+            }
+        } catch (e) {
+            console.warn('[AutoSave] Failed to restore:', e);
+        }
+        return initialNodes;
+    };
+
+    const getInitialEdges = () => {
+        try {
+            const saved = localStorage.getItem('gardenia:autosave');
+            if (saved) {
+                const data = JSON.parse(saved);
+                return data.edges || initialEdges;
+            }
+        } catch (e) { /* fall through */ }
+        return initialEdges;
+    };
+
+    const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(getInitialNodes());
+    const [edges, setEdges, onEdgesChange] = useEdgesState(getInitialEdges());
 
     // Undo/Redo hook
     const { pushSnapshot, undo, redo, canUndo, canRedo, past } = useUndoRedo();
@@ -130,6 +162,33 @@ const Flow = () => {
             setEdges(snapshot.edges);
         }
     }, [nodes, edges, redo, setNodes, setEdges]);
+
+    // Auto-save to localStorage on changes (debounced 1s)
+    useEffect(() => {
+        if (!isInitialized.current) {
+            isInitialized.current = true;
+            return; // Skip first render (it's the restore)
+        }
+        setSaveStatus('unsaved');
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = setTimeout(() => {
+            try {
+                const saveData = {
+                    nodes: nodes.map(n => ({
+                        ...n,
+                        data: { ...n.data, executionState: undefined },
+                    })),
+                    edges,
+                    savedAt: new Date().toISOString(),
+                };
+                localStorage.setItem('gardenia:autosave', JSON.stringify(saveData));
+                setSaveStatus('saved');
+            } catch (e) {
+                console.warn('[AutoSave] Failed to save:', e);
+            }
+        }, 1000);
+        return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+    }, [nodes, edges]);
 
     // Undo/Redo keyboard shortcuts - always active
     useEffect(() => {
@@ -452,9 +511,88 @@ const Flow = () => {
 
     const deleteNode = useCallback((nodeId: string) => {
         pushSnapshot(nodes, edges, 'Delete node');
-        setNodes(nds => nds.filter(n => n.id !== nodeId));
-        setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
+        const selectedNodes = nodes.filter(n => n.selected);
+        if (selectedNodes.length > 1) {
+            const selectedIds = new Set(selectedNodes.map(n => n.id));
+            setNodes(nds => nds.filter(n => !selectedIds.has(n.id)));
+            setEdges(eds => eds.filter(e => !selectedIds.has(e.source) && !selectedIds.has(e.target)));
+        } else {
+            setNodes(nds => nds.filter(n => n.id !== nodeId));
+            setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
+        }
     }, [pushSnapshot, nodes, edges, setNodes, setEdges]);
+
+    // --- Node Grouping ---
+    const groupSelectedNodes = useCallback(() => {
+        const selectedNodes = nodes.filter(n => n.selected && n.type !== 'group');
+        if (selectedNodes.length < 2) return;
+
+        pushSnapshot(nodes, edges, 'Group nodes');
+
+        // Calculate bounding box of selected nodes
+        const padding = 40;
+        const headerHeight = 30;
+        const minX = Math.min(...selectedNodes.map(n => n.position.x)) - padding;
+        const minY = Math.min(...selectedNodes.map(n => n.position.y)) - padding - headerHeight;
+        const maxX = Math.max(...selectedNodes.map(n => n.position.x + 180)) + padding;
+        const maxY = Math.max(...selectedNodes.map(n => n.position.y + 100)) + padding;
+
+        const groupId = `group-${Date.now()}`;
+        const groupNode: AppNode = {
+            id: groupId,
+            type: 'group',
+            position: { x: minX, y: minY },
+            data: { label: 'Group' },
+            style: {
+                width: maxX - minX,
+                height: maxY - minY,
+                backgroundColor: 'rgba(52, 211, 153, 0.05)',
+                border: '1px dashed rgba(52, 211, 153, 0.3)',
+                borderRadius: '8px',
+            },
+        };
+
+        // Re-position children relative to group and set parentId
+        const updatedNodes = nodes.map(n => {
+            if (n.selected && n.type !== 'group') {
+                return {
+                    ...n,
+                    position: { x: n.position.x - minX, y: n.position.y - minY },
+                    parentId: groupId,
+                    extent: 'parent' as const,
+                    selected: false,
+                };
+            }
+            return n;
+        });
+
+        // Insert group node before its children
+        setNodes([groupNode, ...updatedNodes]);
+    }, [nodes, edges, pushSnapshot, setNodes]);
+
+    const ungroupNodes = useCallback((groupId: string) => {
+        pushSnapshot(nodes, edges, 'Ungroup nodes');
+        const groupNode = nodes.find(n => n.id === groupId);
+        if (!groupNode) return;
+
+        setNodes(nds => {
+            const updated = nds.map(n => {
+                if (n.parentId === groupId) {
+                    return {
+                        ...n,
+                        position: {
+                            x: n.position.x + groupNode.position.x,
+                            y: n.position.y + groupNode.position.y,
+                        },
+                        parentId: undefined,
+                        extent: undefined,
+                    };
+                }
+                return n;
+            });
+            return updated.filter(n => n.id !== groupId);
+        });
+    }, [nodes, edges, pushSnapshot, setNodes]);
 
     const runWorkflow = async () => {
         log('=== WORKFLOW EXECUTION STARTED ===');
@@ -742,7 +880,7 @@ const Flow = () => {
             edges,
             version: '1.0.0'
         };
-        exportToJson(workflowData, `workflow-${Date.now()}.json`);
+        exportToJson(workflowData, `workflow-${Date.now()}.gardenia`);
     }, [nodes, edges]);
 
     const onImport = useCallback(async () => {
@@ -880,6 +1018,12 @@ const Flow = () => {
                 <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">View</button>
                 <button className="px-3 py-1 text-xs hover:bg-[#333] rounded-sm transition-colors opacity-50 cursor-not-allowed">Help</button>
 
+                {/* Save Status Indicator */}
+                <div className="flex items-center gap-1.5 ml-3 px-2">
+                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                    <span className="text-[10px] text-gray-500">{saveStatus === 'saved' ? 'Saved' : 'Unsaved'}</span>
+                </div>
+
                 {/* Window Drag Region (fake) */}
                 <div className="flex-1 h-full drag-region" style={{ WebkitAppRegion: 'drag' } as any} />
             </div>
@@ -1008,9 +1152,13 @@ const Flow = () => {
                                     nodeLabel={nodes.find(n => n.id === contextMenu.nodeId)?.data.label || 'Node'}
                                     x={contextMenu.x}
                                     y={contextMenu.y}
+                                    selectedCount={nodes.filter(n => n.selected).length || 1}
                                     onRunFrom={executeFromNode}
                                     onRunOnly={executeOnlyNode}
                                     onDelete={deleteNode}
+                                    onGroup={groupSelectedNodes}
+                                    onUngroup={ungroupNodes}
+                                    isGrouped={nodes.find(n => n.id === contextMenu.nodeId)?.type === 'group'}
                                     onClose={() => setContextMenu(null)}
                                 />
                             )}

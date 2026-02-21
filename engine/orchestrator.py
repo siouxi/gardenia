@@ -193,9 +193,22 @@ class Orchestrator:
 
             return result.to_dict()
         
+        async def execute_node_wrapper(node: DAGNode) -> Dict[str, Any]:
+            """Wrapper that captures branch_handle for conditional routing."""
+            result_dict = await execute_node(node)
+            
+            # Check if the node set __branch_handle__ (conditional routing)
+            branch_var = self.registry._get_from_scope('__branch_handle__', VariableScope.WORKFLOW, None)
+            if branch_var and branch_var.value:
+                result_dict['branch_handle'] = branch_var.value
+                # Clear it for the next node
+                self.registry._workflow.pop('__branch_handle__', None)
+            
+            return result_dict
+        
         try:
             results = await self._current_executor.execute(
-                execute_node, parallel=True,
+                execute_node_wrapper, parallel=True,
                 start_from=start_from, only_node=only_node
             )
             

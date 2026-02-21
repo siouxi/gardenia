@@ -5,9 +5,13 @@ interface NodeContextMenuProps {
     nodeLabel: string;
     x: number;
     y: number;
+    selectedCount: number;
     onRunFrom: (nodeId: string) => void;
     onRunOnly: (nodeId: string) => void;
     onDelete: (nodeId: string) => void;
+    onGroup?: () => void;
+    onUngroup?: (nodeId: string) => void;
+    isGrouped?: boolean;
     onClose: () => void;
 }
 
@@ -16,9 +20,13 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
     nodeLabel,
     x,
     y,
+    selectedCount,
     onRunFrom,
     onRunOnly,
     onDelete,
+    onGroup,
+    onUngroup,
+    isGrouped,
     onClose,
 }) => {
     const menuRef = useRef<HTMLDivElement>(null);
@@ -33,7 +41,6 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
             if (e.key === 'Escape') onClose();
         };
 
-        // Delay attaching to avoid the right-click itself closing the menu
         const timer = setTimeout(() => {
             document.addEventListener('mousedown', handleClickOutside);
             document.addEventListener('keydown', handleEscape);
@@ -46,9 +53,8 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
         };
     }, [onClose]);
 
-    // Keep menu within viewport
     const adjustedX = Math.min(x, window.innerWidth - 220);
-    const adjustedY = Math.min(y, window.innerHeight - 180);
+    const adjustedY = Math.min(y, window.innerHeight - 260);
 
     return (
         <div
@@ -58,7 +64,7 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
         >
             {/* Header */}
             <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-[#333] mb-1">
-                {nodeLabel}
+                {selectedCount > 1 ? `${selectedCount} nodes selected` : nodeLabel}
             </div>
 
             {/* Run from here */}
@@ -81,6 +87,33 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 <span className="ml-auto text-[10px] text-gray-500">single</span>
             </button>
 
+            {/* Group/Ungroup */}
+            {selectedCount > 1 && onGroup && (
+                <>
+                    <div className="h-px bg-[#444] my-1.5" />
+                    <button
+                        className="w-full px-3 py-2 text-xs text-left hover:bg-[#3e3e42] flex items-center gap-2.5 text-blue-300 transition-colors"
+                        onClick={() => { onGroup(); onClose(); }}
+                    >
+                        <span className="text-sm">📦</span>
+                        Group selected nodes
+                        <span className="ml-auto text-[10px] text-gray-500">{selectedCount}</span>
+                    </button>
+                </>
+            )}
+            {isGrouped && onUngroup && (
+                <>
+                    <div className="h-px bg-[#444] my-1.5" />
+                    <button
+                        className="w-full px-3 py-2 text-xs text-left hover:bg-[#3e3e42] flex items-center gap-2.5 text-blue-300 transition-colors"
+                        onClick={() => { onUngroup(nodeId); onClose(); }}
+                    >
+                        <span className="text-sm">📤</span>
+                        Ungroup nodes
+                    </button>
+                </>
+            )}
+
             {/* Divider */}
             <div className="h-px bg-[#444] my-1.5" />
 
@@ -90,7 +123,7 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 onClick={() => { onDelete(nodeId); onClose(); }}
             >
                 <span className="text-sm">✂</span>
-                Delete node
+                {selectedCount > 1 ? `Delete ${selectedCount} nodes` : 'Delete node'}
             </button>
         </div>
     );

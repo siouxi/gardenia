@@ -104,10 +104,14 @@ class DAGExecutor:
         self._reverse_adjacency: Dict[str, List[str]] = defaultdict(list)  # node -> predecessors
         self._in_degree: Dict[str, int] = defaultdict(int)
         
+        # Handle-aware edge lookup: source_id -> [(target_id, source_handle)]
+        self._edges_by_source: Dict[str, List[tuple]] = defaultdict(list)
+        
         for edge in edges:
             self._adjacency[edge.source].append(edge.target)
             self._reverse_adjacency[edge.target].append(edge.source)
             self._in_degree[edge.target] += 1
+            self._edges_by_source[edge.source].append((edge.target, edge.source_handle))
         
         # Ensure all nodes have an in_degree entry
         for node_id in self.nodes:
@@ -118,6 +122,7 @@ class DAGExecutor:
         self._cancel_event = asyncio.Event()
         self._active_tasks: Set[asyncio.Task] = set()
         self._execute_node_fn: Optional[Callable] = None
+        self._branch_results: Dict[str, str] = {}  # node_id -> chosen branch handle
     
     def get_downstream_nodes(self, start_id: str) -> Set[str]:
         """
@@ -315,12 +320,24 @@ class DAGExecutor:
                             error_occurred = True
                             break
                             
-                        # Unlock successors
+                        # Unlock successors (branch-aware)
                         if not (self._cancelled or error_occurred):
-                            for successor in self._adjacency[node_id]:
+                            active_targets = self._get_branch_successors(node_id)
+                            skipped_targets = set(self._adjacency[node_id]) - active_targets
+                            
+                            for successor in active_targets:
                                 in_degree[successor] -= 1
                                 if in_degree[successor] == 0:
                                     ready_queue.put_nowait(successor)
+                            
+                            # Mark skipped branch targets
+                            for skipped_id in skipped_targets:
+                                if skipped_id not in skip_ids:
+                                    self._update_state(skipped_id, ExecutionState.SKIPPED)
+                                    results[skipped_id] = {"status": "skipped", "output": "Branch not taken"}
+                                    processed_count += 1
+                                    # Also propagate skip to their successors' in_degree
+                                    in_degree[skipped_id] -= 1
                                     
                 # Cleanup and mark remaining as skipped/cancelled
                 if self._cancelled or error_occurred:
@@ -350,6 +367,15 @@ class DAGExecutor:
                     
                     result = await self._execute_single(node_id)
                     results[node_id] = result
+                    
+                    # Handle branch-aware skipping in sequential mode
+                    node = self.nodes[node_id]
+                    if node_id in self._branch_results:
+                        skipped_targets = set(self._adjacency[node_id]) - self._get_branch_successors(node_id)
+                        for skipped_id in skipped_targets:
+                            skip_ids.add(skipped_id)
+                            self._update_state(skipped_id, ExecutionState.SKIPPED)
+                            results[skipped_id] = {"status": "skipped", "output": "Branch not taken"}
                     
                     # Stop on error (unless it's START/END)
                     node = self.nodes[node_id]
@@ -387,6 +413,10 @@ class DAGExecutor:
         try:
             result = await self._execute_node_fn(node)
             
+            # Capture branch_handle for conditional routing
+            if 'branch_handle' in result:
+                self._branch_results[node_id] = result['branch_handle']
+            
             status = result.get("status")
             if status == "success":
                 self._update_state(node_id, ExecutionState.SUCCESS)
@@ -414,6 +444,21 @@ class DAGExecutor:
             node.error = str(e)
             self._emit_output(node_id, f"Exception: {e}")
             return {"status": "error", "error": str(e)}
+    
+    def _get_branch_successors(self, node_id: str) -> Set[str]:
+        """Get valid successors for a node, respecting branch routing.
+        If the node has a branch_handle, only return successors connected
+        via edges matching that handle. Otherwise, return all successors.
+        """
+        if node_id not in self._branch_results:
+            return set(self._adjacency[node_id])
+        
+        chosen_handle = self._branch_results[node_id]
+        valid_targets = set()
+        for target, handle in self._edges_by_source[node_id]:
+            if handle == chosen_handle:
+                valid_targets.add(target)
+        return valid_targets
     
     def cancel(self) -> None:
         """Cancel ongoing execution"""
