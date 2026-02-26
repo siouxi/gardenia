@@ -36,7 +36,7 @@
         }
       ],
       "size_bytes": 205741,
-      "created_at": "2026-02-21T09:31:10.078813",
+      "created_at": "2026-02-23T20:50:01.042220",
       "source_node_id": "csv-input-1771683865840",
       "preview": [
         {
@@ -79,6 +79,83 @@
           "Name": "Amoxicillin",
           "Category": "Antifungal",
           "Dosage Form": "Tablet",
+          "Strength": "802 mg",
+          "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
+          "Indication": "Wound",
+          "Classification": "Over-the-Counter"
+        }
+      ]
+    },
+    {
+      "name": "result",
+      "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/result.parquet",
+      "num_rows": 50000,
+      "num_columns": 6,
+      "columns": [
+        {
+          "name": "Name",
+          "type": "large_string"
+        },
+        {
+          "name": "Category",
+          "type": "large_string"
+        },
+        {
+          "name": "Strength",
+          "type": "large_string"
+        },
+        {
+          "name": "Manufacturer",
+          "type": "large_string"
+        },
+        {
+          "name": "Indication",
+          "type": "large_string"
+        },
+        {
+          "name": "Classification",
+          "type": "large_string"
+        }
+      ],
+      "size_bytes": 186147,
+      "created_at": "2026-02-23T20:50:01.089434",
+      "source_node_id": "select-columns-1771684750521",
+      "preview": [
+        {
+          "Name": "Acetocillin",
+          "Category": "Antidiabetic",
+          "Strength": "938 mg",
+          "Manufacturer": "Roche Holding AG",
+          "Indication": "Virus",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Ibuprocillin",
+          "Category": "Antiviral",
+          "Strength": "337 mg",
+          "Manufacturer": "CSL Limited",
+          "Indication": "Infection",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Dextrophen",
+          "Category": "Antibiotic",
+          "Strength": "333 mg",
+          "Manufacturer": "Johnson & Johnson",
+          "Indication": "Wound",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Clarinazole",
+          "Category": "Antifungal",
+          "Strength": "362 mg",
+          "Manufacturer": "AbbVie Inc.",
+          "Indication": "Pain",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Amoxicillin",
+          "Category": "Antifungal",
           "Strength": "802 mg",
           "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
           "Indication": "Wound",
