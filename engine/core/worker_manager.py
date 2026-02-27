@@ -86,6 +86,8 @@ class PythonWorker:
         parameters: Optional[Dict[str, Any]] = None,
         timeout: int = 60,
         memory_limit_mb: int = 512,
+        upstream_nodes: Optional[list] = None,
+        downstream_nodes: Optional[list] = None,
     ) -> ExecutionResult:
         """
         Execute Python code with variable injection.
@@ -130,7 +132,7 @@ class PythonWorker:
         self._initial_keys = set(self._namespace.keys())
         
         # Inject stream_input helper for consumer nodes
-        _inject_stream_input(self._namespace, node_id)
+        _inject_stream_input(self._namespace, node_id, upstream_nodes)
         self._initial_keys.add('stream_input')
         
         # Capture output
@@ -612,6 +614,8 @@ class WorkerManager:
         timeout: int = 60,
         memory_limit_mb: int = 512,
         dependencies: Optional[list] = None,
+        upstream_nodes: Optional[list] = None,
+        downstream_nodes: Optional[list] = None,
     ) -> ExecutionResult:
         """
         Execute code in the appropriate worker.
@@ -634,6 +638,7 @@ class WorkerManager:
                 self._execute_streaming,
                 code, node_id, parameters,
                 timeout, memory_limit_mb,
+                upstream_nodes, downstream_nodes,
                 loop=loop,
             )
         elif language == "python":
@@ -641,7 +646,8 @@ class WorkerManager:
             return await asyncio.to_thread(
                 self._python_worker.execute,
                 code, node_id, parameters,
-                timeout, memory_limit_mb
+                timeout, memory_limit_mb,
+                upstream_nodes, downstream_nodes
             )
         elif language == "r":
             return await self._r_worker.execute(
@@ -662,6 +668,8 @@ class WorkerManager:
         parameters: Optional[Dict[str, Any]] = None,
         timeout: int = 60,
         memory_limit_mb: int = 512,
+        upstream_nodes: Optional[list] = None,
+        downstream_nodes: Optional[list] = None,
         loop: Optional[Any] = None,
     ) -> ExecutionResult:
         """
@@ -672,6 +680,7 @@ class WorkerManager:
         3. Returns total chunk/row stats
         """
         import threading
+        import traceback
 
         from .stream_channel import get_stream_registry, _to_record_batch
 
@@ -694,7 +703,7 @@ class WorkerManager:
                 namespace['inputs'][key] = value
 
         # Inject stream_input helper for consumers
-        _inject_stream_input(namespace, node_id)
+        _inject_stream_input(namespace, node_id, upstream_nodes)
 
         initial_keys = set(namespace.keys())
 
@@ -711,6 +720,7 @@ class WorkerManager:
         exec_state = {"error": None, "chunks": 0, "total_rows": 0}
 
         def run_generator():
+            channel = None
             try:
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
                     exec(wrapped_code, namespace)
@@ -719,6 +729,13 @@ class WorkerManager:
                     channel = registry_stream.get_or_create_channel(node_id)
                     if loop:
                         channel.set_loop(loop)
+                        
+                    if downstream_nodes:
+                        for dst in downstream_nodes:
+                            try:
+                                channel.subscribe(dst)
+                            except Exception:
+                                pass
                     
                     for chunk in gen:
                         if chunk is None:
@@ -740,13 +757,15 @@ class WorkerManager:
                                 f"({num_rows} rows)"
                             )
                         except Exception as e:
-                            log.warning(f"Stream: failed to convert chunk: {e}")
+                            log.warning(f"Stream: failed to convert chunk: {e}\n{traceback.format_exc()}")
+                            exec_state["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+                            break
                             
-                    # Tell consumers we are done
-                    channel.close()
-                    
             except Exception as e:
                 exec_state["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            finally:
+                if channel:
+                    channel.close()
 
         # Run in thread with timeout
         thread = threading.Thread(target=run_generator, daemon=True)
@@ -929,7 +948,7 @@ def _code_has_yield(code: str) -> bool:
         return False
 
 
-def _inject_stream_input(namespace: Dict[str, Any], node_id: str) -> None:
+def _inject_stream_input(namespace: Dict[str, Any], node_id: str, upstream_nodes: Optional[list] = None) -> None:
     """
     Inject a `stream_input(var_name)` helper into the execution namespace.
     Consumer nodes call this to iterate over chunks from an upstream producer.
@@ -948,10 +967,19 @@ def _inject_stream_input(namespace: Dict[str, Any], node_id: str) -> None:
 
         # Check for any active channel that targets this node
         channels = registry.get_channels_for_consumer(node_id)
+        matching_channels = []
         for ch in channels:
             if ch.var_name == var_name:
-                # Read live chunks from the stream
-                return ch.read_batches_sync()
+                if upstream_nodes is not None and ch.source_node not in upstream_nodes:
+                    continue
+                matching_channels.append(ch)
+
+        if matching_channels:
+            # We want to yield from all matching channels.
+            def combined_generator():
+                for ch in matching_channels:
+                    yield from ch.read_batches_sync(subscriber_id=node_id)
+            return combined_generator()
 
         # Fallback: wrap existing variable as a single-element list
         val = namespace.get(var_name)

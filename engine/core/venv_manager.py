@@ -68,6 +68,11 @@ class VenvManager:
 
         self._workers_dir.mkdir(parents=True, exist_ok=True)
         self._cache: Dict[str, Path] = {}  # hash → venv path (in-memory cache)
+        
+        import threading
+        self._locks: Dict[str, threading.Lock] = {}
+        self._global_lock = threading.Lock()
+        
         log.info(f"VenvManager: workers_dir = {self._workers_dir}")
 
     @property
@@ -113,75 +118,87 @@ class VenvManager:
         if key in self._cache:
             return self._cache[key]
 
-        venv_dir = self._workers_dir / key
-        python_path = venv_dir / "bin" / "python"
-        deps_manifest = self._workers_dir / f"{key}.deps"
+        # Acquire lock for this specific hash to prevent duplicate parallel creation
+        with self._global_lock:
+            if key not in self._locks:
+                import threading
+                self._locks[key] = threading.Lock()
+            hash_lock = self._locks[key]
 
-        # Disk cache hit — venv already exists
-        if python_path.exists():
-            log.info(f"VenvManager: cache hit for {key} ({len(deps)} deps)")
-            self._cache[key] = python_path
-            return python_path
+        with hash_lock:
+            # Check cache again inside the lock
+            if key in self._cache:
+                return self._cache[key]
 
-        # Create new micro-venv
-        log.info(f"VenvManager: creating venv {key} for deps: {deps}")
+            venv_dir = self._workers_dir / key
+            python_path = venv_dir / "bin" / "python"
+            deps_manifest = self._workers_dir / f"{key}.deps"
 
-        try:
-            # 1. Create venv (lightweight, no pip bundled)
-            subprocess.run(
-                [sys.executable, "-m", "venv", "--without-pip", str(venv_dir)],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            # Disk cache hit — venv already exists
+            if python_path.exists():
+                log.info(f"VenvManager: cache hit for {key} ({len(deps)} deps)")
+                self._cache[key] = python_path
+                return python_path
 
-            # 2. Install pip into the venv using ensurepip
-            subprocess.run(
-                [str(python_path), "-m", "ensurepip", "--upgrade"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            # Create new micro-venv
+            log.info(f"VenvManager: creating venv {key} for deps: {deps}")
 
-            # 3. Install dependencies
-            install_cmd = [
-                str(python_path), "-m", "pip", "install",
-                "--quiet", "--disable-pip-version-check",
-                *deps,
-            ]
-            result = subprocess.run(
-                install_cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 min max for pip install
-            )
-
-            if result.returncode != 0:
-                # Cleanup broken venv
-                shutil.rmtree(venv_dir, ignore_errors=True)
-                raise RuntimeError(
-                    f"pip install failed (exit {result.returncode}):\n{result.stderr}"
+            try:
+                # 1. Create venv (lightweight, no pip bundled)
+                subprocess.run(
+                    [sys.executable, "-m", "venv", "--without-pip", str(venv_dir)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                 )
 
-            # 4. Write deps manifest for debugging
-            deps_manifest.write_text(json.dumps({
-                "hash": key,
-                "deps": sorted(deps),
-                "python": str(python_path),
-            }, indent=2))
+                # 2. Install pip into the venv using ensurepip
+                subprocess.run(
+                    [str(python_path), "-m", "ensurepip", "--upgrade"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
 
-            log.info(f"VenvManager: venv {key} ready at {venv_dir}")
-            self._cache[key] = python_path
-            return python_path
+                # 3. Install dependencies
+                install_cmd = [
+                    str(python_path), "-m", "pip", "install",
+                    "--quiet", "--disable-pip-version-check",
+                    *deps,
+                ]
+                result = subprocess.run(
+                    install_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5 min max for pip install
+                )
 
-        except subprocess.TimeoutExpired:
-            shutil.rmtree(venv_dir, ignore_errors=True)
-            raise RuntimeError(f"Venv creation timed out for deps: {deps}")
-        except subprocess.CalledProcessError as e:
-            shutil.rmtree(venv_dir, ignore_errors=True)
-            raise RuntimeError(f"Venv creation failed: {e.stderr or e.stdout or str(e)}")
+                if result.returncode != 0:
+                    # Cleanup broken venv
+                    shutil.rmtree(venv_dir, ignore_errors=True)
+                    raise RuntimeError(
+                        f"pip install failed (exit {result.returncode}):\n{result.stderr}"
+                    )
+
+                # 4. Write deps manifest for debugging
+                deps_manifest.write_text(json.dumps({
+                    "hash": key,
+                    "deps": sorted(deps),
+                    "python": str(python_path),
+                }, indent=2))
+
+                log.info(f"VenvManager: venv {key} ready at {venv_dir}")
+                self._cache[key] = python_path
+                return python_path
+            
+            except subprocess.TimeoutExpired:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                raise RuntimeError(f"Venv creation timed out for deps: {deps}")
+            except subprocess.CalledProcessError as e:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                raise RuntimeError(f"Venv creation failed: {e.stderr or e.stdout or str(e)}")
 
     def clear_venv(self, deps: List[str]) -> bool:
         """Remove a cached venv for the given deps. Returns True if removed."""

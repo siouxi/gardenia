@@ -283,19 +283,18 @@ class DAGExecutor:
                 return results
 
             elif parallel:
-                in_degree = self._in_degree.copy()
+                # For streaming/parallel backend, nodes MUST execute simultaneously.
+                # Do NOT respect topological order via in_degree, let them start
+                # and handle blockings internally via StreamChannel.read_batches().
                 ready_queue = asyncio.Queue()
                 
-                for node_id, degree in in_degree.items():
-                    if degree == 0:
-                        ready_queue.put_nowait(node_id)
+                # Enqueue all nodes immediately
+                for node_id in self.nodes.keys():
+                    ready_queue.put_nowait(node_id)
                         
                 self._active_tasks.clear()
                 processed_count = len(skip_ids)  # Already-skipped nodes count as processed
                 total_nodes = len(self.nodes)
-                
-                if total_nodes > 0 and ready_queue.empty():
-                    raise ValueError("Cycle detected in DAG")
                 
                 error_occurred = False
                 
@@ -305,20 +304,19 @@ class DAGExecutor:
                         node_id = ready_queue.get_nowait()
                         # Skip nodes already marked as SKIPPED (partial execution)
                         if node_id in skip_ids:
-                            # Still unlock successors
-                            for successor in self._adjacency[node_id]:
-                                in_degree[successor] -= 1
-                                if in_degree[successor] == 0:
-                                    ready_queue.put_nowait(successor)
+                            # Still unlock successors in terms of count, though all are already running.
+                            # This avoids any loop logic issues, but successors were already enqueued.
                             continue
                         self._update_state(node_id, ExecutionState.QUEUED)
                         task = asyncio.create_task(self._execute_single_wrapper(node_id))
                         setattr(task, "node_id", node_id)
                         self._active_tasks.add(task)
                     
+                    # In true concurrent execution, when a task finishes, it doesn't need to unlock anything 
+                    # because all nodes were already queued.
                     if not self._active_tasks:
                         if processed_count < total_nodes:
-                            raise ValueError(f"Cycle detected or unreachable nodes remaining. Processed {processed_count}/{total_nodes}")
+                            raise ValueError(f"Nodes remaining but no tasks active. Processed {processed_count}/{total_nodes}")
                         break
                         
                     # Wait for tasks or cancellation
@@ -340,33 +338,34 @@ class DAGExecutor:
                         result = task.result()
                         results[node_id] = result
                         processed_count += 1
-                        
+                        # If a node errors, we record it and let other nodes finish gracefully or timeout.
                         node = self.nodes[node_id]
-                        if node.state == ExecutionState.ERROR and node.tool_id not in ('flow-start', 'flow-end'):
-                            error_occurred = True
-                            break
+                        # Start / End nodes don't trigger cascading errors.
+                        if node.state == ExecutionState.ERROR:
+                            if node.tool_id not in ('flow-start', 'flow-end'):
+                                error_occurred = True
+                                # Optional: we could cancel remaining tasks here, 
+                                # but streaming nodes often gracefully timeout if producers die.
+                                pass
                             
-                        # Unlock successors (branch-aware)
+                        # In concurrent mode, we don't 'unlock' successors via in_degree.
+                        # However, we still need to handle conditional branching by marking ignored branch targets as skipped.
                         if not (self._cancelled or error_occurred):
                             active_targets = self._get_branch_successors(node_id)
                             skipped_targets = set(self._adjacency[node_id]) - active_targets
                             
-                            for successor in active_targets:
-                                in_degree[successor] -= 1
-                                if in_degree[successor] == 0:
-                                    ready_queue.put_nowait(successor)
-                            
-                            # Mark skipped branch targets
+                            # Mark skipped branch targets so they don't hang indefinitely
                             for skipped_id in skipped_targets:
                                 if skipped_id not in skip_ids:
                                     self._update_state(skipped_id, ExecutionState.SKIPPED)
                                     results[skipped_id] = {"status": "skipped", "output": "Branch not taken"}
                                     processed_count += 1
-                                    # Also propagate skip to their successors' in_degree
-                                    in_degree[skipped_id] -= 1
                                     
                 # Cleanup and mark remaining as skipped/cancelled
                 if self._cancelled or error_occurred:
+                    from .stream_channel import get_stream_registry
+                    get_stream_registry().cancel_all()
+                    
                     for task in self._active_tasks:
                         task.cancel()
                         

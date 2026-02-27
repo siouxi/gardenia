@@ -59,14 +59,14 @@ def process_chunk(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 # 1. STREAMING MODE SUPPORT
-if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
+if 'stream_input' in globals() and hasattr(stream_input('data'), '__iter__'):
     stream = stream_input('data')
     for chunk in stream:
         yield process_chunk(chunk)
 
 # 2. ZERO-COPY FULL MEMORY MODE SUPPORT
-elif 'data' in dir() and isinstance(data, pd.DataFrame):
-    result = process_chunk(data)
+elif 'data' in globals() and isinstance(globals()['data'], pd.DataFrame):
+    result = process_chunk(globals()['data'])
     print("Zero-Copy block processed successfully.")
 else:
     raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
@@ -99,14 +99,14 @@ def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
     return result if 'result' in locals() else data
 
 # 1. STREAMING MODE SUPPORT
-if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
+if 'stream_input' in globals() and hasattr(stream_input('data'), '__iter__'):
     stream = stream_input('data')
     for chunk in stream:
         yield process_chunk(chunk)
 
 # 2. ZERO-COPY FULL MEMORY MODE SUPPORT
-elif 'data' in dir() and isinstance(data, pd.DataFrame):
-    result = process_chunk(data)
+elif 'data' in globals() and isinstance(globals()['data'], pd.DataFrame):
+    result = process_chunk(globals()['data'])
     print("Zero-Copy block processed successfully.")
 else:
     raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")"""

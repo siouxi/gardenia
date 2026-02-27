@@ -103,10 +103,20 @@ class StreamChannel:
         self.source_node = source_node
         self.target_node = target_node
         self.var_name = var_name
-        self._queue: asyncio.Queue = asyncio.Queue(maxsize=max_buffer)
+        self.max_buffer = max_buffer
+        self._subscribers: Dict[str, asyncio.Queue] = {}  # subscriber_id -> Queue
         self._closed = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.stats = StreamStats()
+
+    def subscribe(self, subscriber_id: str) -> asyncio.Queue:
+        """Register a new consumer and return its dedicated queue."""
+        if self._closed:
+            raise RuntimeError("StreamChannel is already closed")
+        if subscriber_id not in self._subscribers:
+            self._subscribers[subscriber_id] = asyncio.Queue(maxsize=self.max_buffer)
+            log.info(f"StreamChannel {self.source_node}: added subscriber {subscriber_id}")
+        return self._subscribers[subscriber_id]
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:
         if self._loop is None:
@@ -132,10 +142,33 @@ class StreamChannel:
 
         loop = self._get_loop()
         # Thread-safe put: we may be called from a sync thread
-        future = asyncio.run_coroutine_threadsafe(
-            self._queue.put(batch), loop
-        )
-        future.result(timeout=300)  # Block until enqueued (backpressure)
+        
+        # If there are no subscribers yet (e.g. they hasn't started), we can either wait or 
+        # just assume the Orchestrator will have attached them if they exist. 
+        # But wait, `get_or_create_channel` is called by producer *before* consumer in some cases.
+        # Actually in parallel execution, consumers start and call `stream_input` (which registers them)
+        # almost immediately.
+        
+        try:
+            # We must wait for ALL subscriber queues to accept the chunk
+            # asyncio.gather allows concurrent putting (respecting each queue's backpressure)
+            if not self._subscribers:
+                # If no one is listening, we just discard? Or wait?
+                # For safety, let's yield control to let consumers register, then discard if still none.
+                pass
+            else:
+                futures = []
+                for sub_queue in self._subscribers.values():
+                    futures.append(asyncio.run_coroutine_threadsafe(
+                        sub_queue.put(batch), loop
+                    ))
+                for f in futures:
+                    f.result(timeout=300)  # Block until enqueued (backpressure)
+        except asyncio.CancelledError:
+            # The async event loop or the consumer has shut down early.
+            # Stop producing data gracefully.
+            self._closed = True
+            raise RuntimeError("StreamChannel queue cancelled (consumer likely exited)")
 
     def close(self) -> None:
         """Signal end-of-stream (called from producer when done)."""
@@ -144,31 +177,54 @@ class StreamChannel:
         self._closed = True
         self.stats.is_closed = True
         loop = self._get_loop()
-        future = asyncio.run_coroutine_threadsafe(
-            self._queue.put(_END_OF_STREAM), loop
-        )
-        future.result(timeout=10)
+        if self._subscribers:
+            futures = []
+            for sub_queue in self._subscribers.values():
+                futures.append(asyncio.run_coroutine_threadsafe(
+                    sub_queue.put(_END_OF_STREAM), loop
+                ))
+            for f in futures:
+                f.result(timeout=10)
 
-    async def read_batches(self) -> AsyncIterator["pa.RecordBatch"]:
+    def cancel(self) -> None:
+        """Force cancel the stream to unblock producers if consumer dies."""
+        self._closed = True
+        self.stats.is_closed = True
+        if self._subscribers:
+            for sub_queue in self._subscribers.values():
+                # Drain the queue to unblock any pending put()
+                while not sub_queue.empty():
+                    try:
+                        sub_queue.get_nowait()
+                        sub_queue.task_done()
+                    except asyncio.QueueEmpty:
+                        break
+                # Put END OF STREAM just in case
+                try:
+                    sub_queue.put_nowait(_END_OF_STREAM)
+                except asyncio.QueueFull:
+                    pass
+
+    async def read_batches(self, subscriber_id: str) -> AsyncIterator["pa.RecordBatch"]:
         """
-        Async iterator that yields RecordBatches as they arrive.
-        Blocks until the next chunk is available. Ends when producer calls close().
+        Async iterator that yields RecordBatches as they arrive for a specific subscriber.
         """
+        queue = self.subscribe(subscriber_id)
         while True:
-            item = await self._queue.get()
+            item = await queue.get()
             if item is _END_OF_STREAM:
                 break
             self.stats.chunks_read += 1
             self.stats.total_rows_read += item.num_rows
             yield item
 
-    async def read_all(self) -> Optional["pa.Table"]:
+    async def read_all(self, subscriber_id: str) -> Optional["pa.Table"]:
         """
         Collect all chunks into a single Arrow Table.
         Useful for backward compatibility when the consumer doesn't use streaming.
         """
         batches = []
-        async for batch in self.read_batches():
+        async for batch in self.read_batches(subscriber_id):
             batches.append(batch)
 
         if not batches:
@@ -176,16 +232,26 @@ class StreamChannel:
 
         return pa.Table.from_batches(batches)
 
-    def read_batches_sync(self):
+    def read_batches_sync(self, subscriber_id: str):
         """
         Synchronous iterator for consumer nodes running in threads.
         Yields pandas DataFrames (converted from Arrow batches).
         """
         loop = self._get_loop()
+        
+        # We must register the subscriber synchronously if it hasn't been yet
+        # But we must run it in the async loop
+        def _get_queue():
+            return self.subscribe(subscriber_id)
+        
+        future = asyncio.run_coroutine_threadsafe(
+            asyncio.to_thread(_get_queue), loop
+        )
+        queue = future.result(timeout=10)
 
         while True:
             future = asyncio.run_coroutine_threadsafe(
-                self._queue.get(), loop
+                queue.get(), loop
             )
             item = future.result(timeout=600)  # 10 min max wait per chunk
             if item is _END_OF_STREAM:
@@ -246,6 +312,14 @@ class StreamRegistry:
                 except Exception:
                     pass
         self._channels.clear()
+
+    def cancel_all(self) -> None:
+        """Cancel and drain all active channels to prevent deadlocks."""
+        for ch in self._channels.values():
+            try:
+                ch.cancel()
+            except Exception:
+                pass
 
     def remove_channel(self, source_node: str, var_name: str = "data") -> None:
         """Remove a specific channel."""

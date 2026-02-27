@@ -296,7 +296,10 @@ class PlasmaStore:
             try:
                 shm.close()
                 shm.unlink()
-            except Exception as e:
+            except FileNotFoundError:
+                # Expected if already unlinked by GC or another process
+                pass
+            except BaseException as e:
                 log.warning(
                     f"PlasmaStore: error cleaning up segment '{key}': {e}"
                 )

@@ -107,6 +107,8 @@ class Orchestrator:
         # so upstream data remains available)
         if not is_partial:
             self.registry.clear_workflow()
+            from core.stream_channel import get_stream_registry
+            get_stream_registry().clear()
         
         # Parse workflow
         nodes, edges = self._parse_workflow(workflow_data)
@@ -148,6 +150,8 @@ class Orchestrator:
         
         # Execute
         async def execute_node(node: DAGNode) -> Dict[str, Any]:
+            upstream_nodes = self._current_executor._reverse_adjacency.get(node.id, [])
+            downstream_nodes = list(self._current_executor._adjacency.get(node.id, set()))
             result = await self.worker.execute(
                 code=node.code,
                 language=node.language,
@@ -156,6 +160,8 @@ class Orchestrator:
                 timeout=node.timeout,
                 memory_limit_mb=node.memory_limit,
                 dependencies=node.dependencies,
+                upstream_nodes=upstream_nodes,
+                downstream_nodes=downstream_nodes,
             )
 
             # Auto-save datasets to storage
@@ -213,8 +219,11 @@ class Orchestrator:
             # Use backend from request or default
             backend = workflow_data.get("backend", self._backend)
             results = await self._current_executor.execute(
-                execute_node_wrapper, parallel=True, backend=backend,
-                start_from=start_from, only_node=only_node
+                execute_node_fn=execute_node_wrapper,
+                parallel=True,  # Mandatory for streaming (producers and consumers must run simultaneously)
+                backend=backend,
+                start_from=start_from,
+                only_node=only_node
             )
             
             # Get final variable state
