@@ -17,11 +17,26 @@ test_pct = params.get('test_size', 20) / 100
 shuffle = params.get('shuffle', True)
 seed = int(params.get('random_state', 42))
 
-if 'data' in dir() and isinstance(data, pd.DataFrame):
+# 🛡️ ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)
+import pandas as pd
+
+def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
     train, test = train_test_split(data, test_size=test_pct, shuffle=shuffle, random_state=seed)
     print(f"Split: {len(data)} → Train: {len(train)}, Test: {len(test)}")
     print(f"Train ratio: {len(train)/len(data)*100:.0f}%, Test ratio: {len(test)/len(data)*100:.0f}%")
+    return result if 'result' in locals() else data
+
+# 1. STREAMING MODE SUPPORT
+if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
+    stream = stream_input('data')
+    for chunk in stream:
+        yield process_chunk(chunk)
+
+# 2. ZERO-COPY FULL MEMORY MODE SUPPORT
+elif 'data' in dir() and isinstance(data, pd.DataFrame):
+    result = process_chunk(data)
+    print("Zero-Copy block processed successfully.")
 else:
-    raise ValueError("Connect a dataset to the input")
+    raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
 `, ['scikit-learn', 'pandas'])
     .build();

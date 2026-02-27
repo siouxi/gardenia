@@ -18,12 +18,15 @@ col_b = params.get('col_b', '')
 test_type = params.get('test_type', 'independent')
 equal_var = params.get('equal_var', True)
 
-if 'data' in dir() and isinstance(data, pd.DataFrame):
+# 🛡️ ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)
+import pandas as pd
+
+def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
     if col_a not in data.columns:
         raise ValueError(f"Column '{col_a}' not found. Available: {list(data.columns)}")
-    
+
     a = data[col_a].dropna()
-    
+
     if test_type == 'one_sample':
         stat, pval = stats.ttest_1samp(a, 0)
         print(f"One-sample t-test on '{col_a}'")
@@ -37,13 +40,25 @@ if 'data' in dir() and isinstance(data, pd.DataFrame):
         else:
             stat, pval = stats.ttest_ind(a, b, equal_var=equal_var)
             print(f"Independent t-test: '{col_a}' vs '{col_b}'")
-    
+
     print(f"  t-statistic: {stat:.4f}")
     print(f"  p-value: {pval:.6f}")
     print(f"  Significant (α=0.05): {'Yes ✓' if pval < 0.05 else 'No'}")
-    
+
     result = pd.DataFrame({'statistic': [stat], 'p_value': [pval], 'significant': [pval < 0.05]})
+    return result if 'result' in locals() else data
+
+# 1. STREAMING MODE SUPPORT
+if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
+    stream = stream_input('data')
+    for chunk in stream:
+        yield process_chunk(chunk)
+
+# 2. ZERO-COPY FULL MEMORY MODE SUPPORT
+elif 'data' in dir() and isinstance(data, pd.DataFrame):
+    result = process_chunk(data)
+    print("Zero-Copy block processed successfully.")
 else:
-    raise ValueError("Connect a dataset to the input")
+    raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
 `, ['scipy', 'pandas'])
     .build();

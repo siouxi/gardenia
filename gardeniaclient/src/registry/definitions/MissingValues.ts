@@ -11,7 +11,10 @@ import pandas as pd
 
 action = params.get('action', 'report')
 
-if 'data' in dir() and isinstance(data, pd.DataFrame):
+# 🛡️ ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)
+import pandas as pd
+
+def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
     missing = data.isnull().sum()
     total_missing = missing.sum()
     print(f"Total missing values: {total_missing} / {data.size} ({total_missing/data.size*100:.2f}%)")
@@ -37,7 +40,19 @@ if 'data' in dir() and isinstance(data, pd.DataFrame):
         result = data.fillna(0)
         print("\\nFilled all missing values with 0")
     print(result.head())
+    return result if 'result' in locals() else data
+
+# 1. STREAMING MODE SUPPORT
+if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
+    stream = stream_input('data')
+    for chunk in stream:
+        yield process_chunk(chunk)
+
+# 2. ZERO-COPY FULL MEMORY MODE SUPPORT
+elif 'data' in dir() and isinstance(data, pd.DataFrame):
+    result = process_chunk(data)
+    print("Zero-Copy block processed successfully.")
 else:
-    raise ValueError("Connect a dataset to the input")
+    raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
 `, ['pandas'])
     .build();

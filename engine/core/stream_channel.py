@@ -231,10 +231,10 @@ class StreamRegistry:
         return self._channels.get((source_node, var_name))
 
     def get_channels_for_consumer(self, target_node: str) -> List[StreamChannel]:
-        """Get all channels where target_node is the consumer."""
+        """Get all channels where target_node is the consumer or target is wildcard '*'."""
         return [
             ch for ch in self._channels.values()
-            if ch.target_node == target_node
+            if ch.target_node == target_node or ch.target_node == "*"
         ]
 
     def clear(self) -> None:
@@ -256,6 +256,22 @@ class StreamRegistry:
                 ch.close()
             except Exception:
                 pass
+
+    def get_or_create_channel(
+        self,
+        source_node: str,
+        var_name: str = "data",
+        max_buffer: int = 4
+    ) -> StreamChannel:
+        """Get an existing channel or create it if it doesn't exist."""
+        key = (source_node, var_name)
+        if key not in self._channels:
+            # We don't always know the exact target node when the producer starts
+            # yielding, so we use a wildcard '*' for target_node.
+            channel = StreamChannel(source_node, "*", var_name, max_buffer)
+            self._channels[key] = channel
+            log.info(f"StreamRegistry: dynamically created channel {source_node} var='{var_name}'")
+        return self._channels[key]
 
 
 # --- Singleton ---

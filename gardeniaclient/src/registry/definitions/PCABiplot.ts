@@ -18,15 +18,18 @@ from sklearn.preprocessing import StandardScaler
 group_col = params.get('group_col', '')
 n_comp = int(params.get('n_components', 2))
 
-if 'data' in dir() and isinstance(data, pd.DataFrame):
+# 🛡️ ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)
+import pandas as pd
+
+def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
     numeric = data.select_dtypes(include='number')
     X = StandardScaler().fit_transform(numeric)
-    
+
     pca = PCA(n_components=min(n_comp, X.shape[1]))
     coords = pca.fit_transform(X)
-    
+
     fig, ax = plt.subplots(figsize=(10, 8))
-    
+
     if group_col and group_col in data.columns:
         groups = data[group_col].astype(str)
         for g in groups.unique():
@@ -35,19 +38,31 @@ if 'data' in dir() and isinstance(data, pd.DataFrame):
         ax.legend(title=group_col)
     else:
         ax.scatter(coords[:, 0], coords[:, 1], alpha=0.7, s=50, c='#3498db')
-    
+
     ax.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)")
     ax.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)")
     ax.set_title("PCA Biplot")
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.savefig('pca_biplot.png', dpi=150)
     plt.close()
     print("PCA biplot saved to pca_biplot.png")
-    
+
     result = pd.DataFrame(coords[:, :2], columns=['PC1', 'PC2'], index=data.index)
+    return result if 'result' in locals() else data
+
+# 1. STREAMING MODE SUPPORT
+if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
+    stream = stream_input('data')
+    for chunk in stream:
+        yield process_chunk(chunk)
+
+# 2. ZERO-COPY FULL MEMORY MODE SUPPORT
+elif 'data' in dir() and isinstance(data, pd.DataFrame):
+    result = process_chunk(data)
+    print("Zero-Copy block processed successfully.")
 else:
-    raise ValueError("Connect a dataset to the input")
+    raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
 `, ['scikit-learn', 'matplotlib', 'pandas'])
     .build();

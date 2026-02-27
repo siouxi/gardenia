@@ -629,10 +629,12 @@ class WorkerManager:
         elif language == "python" and _code_has_yield(code):
             # --- Streaming generator execution ---
             import asyncio
+            loop = asyncio.get_running_loop()
             return await asyncio.to_thread(
                 self._execute_streaming,
                 code, node_id, parameters,
                 timeout, memory_limit_mb,
+                loop=loop,
             )
         elif language == "python":
             import asyncio
@@ -660,6 +662,7 @@ class WorkerManager:
         parameters: Optional[Dict[str, Any]] = None,
         timeout: int = 60,
         memory_limit_mb: int = 512,
+        loop: Optional[Any] = None,
     ) -> ExecutionResult:
         """
         Execute Python code that uses `yield` as a streaming generator.
@@ -713,23 +716,35 @@ class WorkerManager:
                     exec(wrapped_code, namespace)
                     gen = namespace['__gardenia_generator__']()
 
+                    channel = registry_stream.get_or_create_channel(node_id)
+                    if loop:
+                        channel.set_loop(loop)
+                    
                     for chunk in gen:
                         if chunk is None:
                             continue
                         try:
-                            batch = _to_record_batch(chunk)
+                            # Write batch blocking (pushes to async queue from this thread)
+                            channel.write_batch(chunk)
+                            
                             exec_state["chunks"] += 1
-                            exec_state["total_rows"] += batch.num_rows
+                            try:
+                                num_rows = len(chunk)
+                            except:
+                                num_rows = 0
+                            exec_state["total_rows"] += num_rows
 
-                            # Store the latest chunk in PlasmaStore too
-                            # so downstream nodes can access it via registry
                             log.info(
                                 f"Stream: {node_id} yielded chunk "
                                 f"#{exec_state['chunks']} "
-                                f"({batch.num_rows} rows)"
+                                f"({num_rows} rows)"
                             )
                         except Exception as e:
                             log.warning(f"Stream: failed to convert chunk: {e}")
+                            
+                    # Tell consumers we are done
+                    channel.close()
+                    
             except Exception as e:
                 exec_state["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
 
