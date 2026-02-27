@@ -3,7 +3,7 @@ import {
     Cpu, Server, Activity,
     Zap, HardDrive, MemoryStick,
     RefreshCw, CheckCircle2, XCircle, AlertTriangle,
-    Monitor, Globe, ChevronRight,
+    Monitor, Globe, ChevronRight, TerminalSquare, Save
 } from 'lucide-react';
 
 interface ClusterResources {
@@ -25,10 +25,53 @@ export function EnginePreferences() {
     const [switching, setSwitching] = useState(false);
     const [statusMessage, setStatusMessage] = useState('');
 
-    // Check Ray availability on mount
+    const [pyPath, setPyPath] = useState('');
+    const [rPath, setRPath] = useState('');
+    const [savingPaths, setSavingPaths] = useState(false);
+    const [pathMessage, setPathMessage] = useState({ text: '', type: '' });
+
+    // Load paths on mount
     useEffect(() => {
+        loadPaths();
         checkRayStatus();
     }, []);
+
+    const loadPaths = async () => {
+        try {
+            const api = (window as any).electronAPI;
+            if (api?.env) {
+                const paths = await api.env.getPaths();
+                setPyPath(paths.pythonPath || '');
+                setRPath(paths.rPath || '');
+            }
+        } catch (e) {
+            console.error('Failed to load env paths', e);
+        }
+    };
+
+    const handleSavePaths = async () => {
+        setSavingPaths(true);
+        setPathMessage({ text: 'Verifying and saving...', type: 'info' });
+        try {
+            const api = (window as any).electronAPI;
+            if (api?.env) {
+                const result = await api.env.setPaths({ pythonPath: pyPath, rPath: rPath });
+                if (result.success) {
+                    setPathMessage({
+                        text: `Saved! ${result.needsPythonRestart || result.needsRRestart ? 'Engines restarting...' : ''}`,
+                        type: 'success'
+                    });
+                    setTimeout(() => setPathMessage({ text: '', type: '' }), 4000);
+                } else {
+                    setPathMessage({ text: 'Error: ' + result.errors.join(', '), type: 'error' });
+                }
+            }
+        } catch (e: any) {
+            setPathMessage({ text: 'Failed to save: ' + e.message, type: 'error' });
+        } finally {
+            setSavingPaths(false);
+        }
+    };
 
     const checkRayStatus = async () => {
         setChecking(true);
@@ -104,6 +147,63 @@ export function EnginePreferences() {
     return (
         <div className="flex flex-col gap-5 h-full overflow-y-auto pr-1">
 
+            {/* Environment Paths Selection */}
+            <div>
+                <h3 className="text-sm font-semibold text-[#ddd] mb-3 flex items-center gap-2">
+                    <TerminalSquare size={14} className="text-indigo-400" />
+                    Interpreter Paths
+                </h3>
+
+                <div className="flex flex-col gap-3 p-4 rounded-lg border border-[#333] bg-[#1a1a1e]">
+                    <div className="flex flex-col gap-1.5">
+                        <label className="text-xs text-[#aaa] font-medium flex justify-between">
+                            Python Executable
+                            <span className="text-[10px] text-[#555]">Conda / Homebrew / Env</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={pyPath}
+                            onChange={(e) => setPyPath(e.target.value)}
+                            placeholder="e.g. /opt/homebrew/bin/python3"
+                            className="w-full bg-[#111] border border-[#333] rounded px-3 py-2 text-xs text-[#ddd] focus:outline-none focus:border-indigo-500/50 transition-colors font-mono"
+                        />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 mt-1">
+                        <label className="text-xs text-[#aaa] font-medium flex justify-between">
+                            Rscript Executable
+                        </label>
+                        <input
+                            type="text"
+                            value={rPath}
+                            onChange={(e) => setRPath(e.target.value)}
+                            placeholder="e.g. /usr/local/bin/Rscript"
+                            className="w-full bg-[#111] border border-[#333] rounded px-3 py-2 text-xs text-[#ddd] focus:outline-none focus:border-indigo-500/50 transition-colors font-mono"
+                        />
+                    </div>
+
+                    {pathMessage.text && (
+                        <div className={`text-[10px] py-1.5 px-2 rounded border mt-1 ${pathMessage.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                pathMessage.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                    'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                            }`}>
+                            {pathMessage.text}
+                        </div>
+                    )}
+
+                    <div className="flex justify-end mt-2">
+                        <button
+                            onClick={handleSavePaths}
+                            disabled={savingPaths}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 rounded text-xs text-indigo-400 font-medium transition-colors disabled:opacity-50"
+                        >
+                            {savingPaths ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+                            Apply & Restart
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* Backend Selection */}
             <div>
                 <h3 className="text-sm font-semibold text-[#ddd] mb-3 flex items-center gap-2">
@@ -117,8 +217,8 @@ export function EnginePreferences() {
                         onClick={() => switchBackend('local')}
                         disabled={switching}
                         className={`p-4 rounded-lg border text-left transition-all duration-200 ${backend === 'local'
-                                ? 'border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
-                                : 'border-[#333] bg-[#1a1a1e] hover:border-[#555] hover:bg-[#222]'
+                            ? 'border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+                            : 'border-[#333] bg-[#1a1a1e] hover:border-[#555] hover:bg-[#222]'
                             }`}
                     >
                         <div className="flex items-center gap-2.5 mb-2">
@@ -144,10 +244,10 @@ export function EnginePreferences() {
                         onClick={() => switchBackend('ray')}
                         disabled={switching || !rayAvailable}
                         className={`p-4 rounded-lg border text-left transition-all duration-200 ${backend === 'ray'
-                                ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]'
-                                : !rayAvailable
-                                    ? 'border-[#2a2a2e] bg-[#161618] opacity-60 cursor-not-allowed'
-                                    : 'border-[#333] bg-[#1a1a1e] hover:border-[#555] hover:bg-[#222]'
+                            ? 'border-blue-500/60 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]'
+                            : !rayAvailable
+                                ? 'border-[#2a2a2e] bg-[#161618] opacity-60 cursor-not-allowed'
+                                : 'border-[#333] bg-[#1a1a1e] hover:border-[#555] hover:bg-[#222]'
                             }`}
                     >
                         <div className="flex items-center gap-2.5 mb-2">

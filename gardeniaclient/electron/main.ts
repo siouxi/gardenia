@@ -3,12 +3,64 @@ import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import { getOrchestrator, WorkflowOrchestrator } from './orchestrator/Orchestrator';
+import { detectPythonPath, detectRPath, verifyExecutable } from './utils/envDetector';
 
 let mainWindow: BrowserWindow | null;
-let activePythonPath = 'python3'; // Default
 
 // Determine if we are in development mode
 const isDev = process.env.NODE_ENV === 'development';
+
+// ---------------------------------------------------------
+// Settings Store (Simple JSON file in userData)
+// ---------------------------------------------------------
+class SettingsStore {
+    private path: string;
+    private data: any = {};
+
+    constructor() {
+        // app.getPath('userData') is safe to call after app is ready, but we can resolve it lazily 
+        // or delay init. For now, we'll initialize on app.ready.
+        this.path = '';
+    }
+
+    init() {
+        this.path = path.join(app.getPath('userData'), 'gardenia-settings.json');
+        this.load();
+    }
+
+    load() {
+        try {
+            if (fs.existsSync(this.path)) {
+                this.data = JSON.parse(fs.readFileSync(this.path, 'utf8'));
+            }
+        } catch (e) {
+            console.error('Failed to load settings:', e);
+            this.data = {};
+        }
+    }
+
+    save() {
+        try {
+            fs.writeFileSync(this.path, JSON.stringify(this.data, null, 2), 'utf8');
+        } catch (e) {
+            console.error('Failed to save settings:', e);
+        }
+    }
+
+    get(key: string, defaultValue?: any) {
+        return this.data[key] !== undefined ? this.data[key] : defaultValue;
+    }
+
+    set(key: string, value: any) {
+        this.data[key] = value;
+        this.save();
+    }
+}
+
+const settings = new SettingsStore();
+let activePythonPath = 'python3';
+let activeRPath = 'Rscript';
+// ---------------------------------------------------------
 
 // R Session Manager
 class RSessionManager {
@@ -41,9 +93,8 @@ class RSessionManager {
 
                 console.log(`Using R bridge script at: ${scriptPath}`);
 
-                // Spawn the bridge script using Rscript
-                // Using "Rscript" assuming it is in PATH
-                this.rProcess = spawn('Rscript', [scriptPath]);
+                // Spawn the bridge script using configured RPath
+                this.rProcess = spawn(activeRPath, [scriptPath]);
 
                 this.rProcess.on('error', (error) => {
                     console.error('R process error:', error);
@@ -236,6 +287,24 @@ const runPythonScript = () => {
 };
 
 app.on('ready', () => {
+    // Initialize settings store and detect paths if not set
+    settings.init();
+
+    activePythonPath = settings.get('pythonPath');
+    if (!activePythonPath) {
+        activePythonPath = detectPythonPath();
+        settings.set('pythonPath', activePythonPath);
+    }
+
+    activeRPath = settings.get('rPath');
+    if (!activeRPath) {
+        activeRPath = detectRPath();
+        settings.set('rPath', activeRPath);
+    }
+
+    console.log(`[Startup] Active Python Path: ${activePythonPath}`);
+    console.log(`[Startup] Active R Path: ${activeRPath}`);
+
     createWindow();
 
     ipcMain.handle('run-workflow', async (event, workflowData) => {
@@ -591,7 +660,7 @@ app.on('ready', () => {
                 json <- jsonlite::toJSON(as.data.frame(installed), auto_unbox=TRUE)
                 cat(json)
             `;
-            const proc = spawn('Rscript', ['-e', rScript]);
+            const proc = spawn(activeRPath, ['-e', rScript]);
             let data = '';
             proc.stdout.on('data', d => data += d);
             proc.on('close', () => {
@@ -609,7 +678,7 @@ app.on('ready', () => {
         return new Promise((resolve) => {
             // Choose a CRAN mirror
             const rScript = `install.packages('${name}', repos='http://cran.rstudio.com')`;
-            const proc = spawn('Rscript', ['-e', rScript]);
+            const proc = spawn(activeRPath, ['-e', rScript]);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -622,7 +691,7 @@ app.on('ready', () => {
     ipcMain.handle('package:uninstall-r', async (event, name) => {
         return new Promise((resolve) => {
             const rScript = `remove.packages('${name}')`;
-            const proc = spawn('Rscript', ['-e', rScript]);
+            const proc = spawn(activeRPath, ['-e', rScript]);
             let output = '';
             proc.stdout.on('data', d => output += d);
             proc.stderr.on('data', d => output += d);
@@ -681,12 +750,72 @@ app.on('ready', () => {
     });
 
     ipcMain.handle('env:set-python', async (event, pythonPath) => {
+        if (!verifyExecutable(pythonPath, '--version')) {
+            return { success: false, error: 'Invalid or broken Python executable' };
+        }
         activePythonPath = pythonPath;
+        settings.set('pythonPath', activePythonPath);
         return { success: true, current: activePythonPath };
     });
 
     ipcMain.handle('env:get-python', async () => {
         return activePythonPath;
+    });
+
+    // Unified paths handlers for frontend mapping
+    ipcMain.handle('env:get-paths', async () => {
+        return {
+            pythonPath: activePythonPath,
+            rPath: activeRPath
+        };
+    });
+
+    ipcMain.handle('env:set-paths', async (event, newPaths) => {
+        const result: any = { success: true, errors: [] };
+
+        let needsPythonRestart = false;
+        let needsRRestart = false;
+
+        if (newPaths.pythonPath && newPaths.pythonPath !== activePythonPath) {
+            if (verifyExecutable(newPaths.pythonPath, '--version')) {
+                activePythonPath = newPaths.pythonPath;
+                settings.set('pythonPath', activePythonPath);
+                needsPythonRestart = true;
+            } else {
+                result.success = false;
+                result.errors.push('Invalid Python Path');
+            }
+        }
+
+        if (newPaths.rPath && newPaths.rPath !== activeRPath) {
+            if (verifyExecutable(newPaths.rPath, '--version')) {
+                activeRPath = newPaths.rPath;
+                settings.set('rPath', activeRPath);
+                needsRRestart = true;
+            } else {
+                result.success = false;
+                result.errors.push('Invalid R Path');
+            }
+        }
+
+        result.needsPythonRestart = needsPythonRestart;
+        result.needsRRestart = needsRRestart;
+
+        // Restart sessions if needed
+        if (needsPythonRestart) {
+            pythonSession.stop();
+            bashSession.stop();
+            const orchestrator = getOrchestrator(activePythonPath);
+            orchestrator.forceStop(); // Stop old instance
+            // We'll let the frontend or next request trigger restarts, or we quickly restart here:
+            // orchestrator instance will be recreated next time it's imported or started.
+        }
+
+        if (needsRRestart) {
+            rSession.stop();
+        }
+
+        return result;
     });
 });
 
