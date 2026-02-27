@@ -247,6 +247,12 @@ export const ResolveNode = React.memo(({ id, data, selected }: NodeProps) => {
                             {data.language === 'r' ? 'R' : 'PY'}
                         </div>
                     )}
+                    {/* Deps badge */}
+                    {Array.isArray(data.dependencies) && data.dependencies.length > 0 && (
+                        <div className="px-1 py-0.5 rounded-[2px] text-[8px] bg-purple-500/15 text-purple-300 border border-purple-500/25" title={`Dependencies: ${data.dependencies.join(', ')}`}>
+                            📦{data.dependencies.length}
+                        </div>
+                    )}
                 </div>
             </div>
 

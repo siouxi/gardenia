@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, NodeTypes, EdgeTypes, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { Sidebar } from './components/Sidebar';
@@ -12,6 +12,7 @@ import { PostItNode } from './components/PostItNode';
 import { CodeEditor } from './components/CodeEditor';
 import { NodeContextMenu } from './components/NodeContextMenu';
 import { CustomMiniMap } from './components/CustomMiniMap';
+import { StreamEdge } from './components/StreamEdge';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { PackageManager } from './components/PackageManager';
@@ -393,6 +394,10 @@ const Flow = () => {
         postit: PostItNode
     }), []);
 
+    const edgeTypes = useMemo<EdgeTypes>(() => ({
+        default: StreamEdge,
+    }), []);
+
     const onConnect = useCallback(
         (params: Connection) => {
             pushSnapshot(nodes, edges, 'Connect nodes'); // Save state before connecting
@@ -521,6 +526,7 @@ const Flow = () => {
                     code: n.data.code || '',
                     language: n.data.language || 'python',
                     parameterValues: n.data.parameterValues || {},
+                    dependencies: n.data.dependencies || [],
                 }
             })),
             edges: edges.map(e => ({
@@ -1204,6 +1210,7 @@ const Flow = () => {
                                 onNodeContextMenu={onNodeContextMenu}
                                 onPaneClick={onPaneClick}
                                 nodeTypes={nodeTypes}
+                                edgeTypes={edgeTypes}
                                 fitView
                                 colorMode="dark"
                                 proOptions={{ hideAttribution: true }}

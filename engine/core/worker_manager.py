@@ -129,6 +129,10 @@ class PythonWorker:
         # Record initial keys to detect new variables
         self._initial_keys = set(self._namespace.keys())
         
+        # Inject stream_input helper for consumer nodes
+        _inject_stream_input(self._namespace, node_id)
+        self._initial_keys.add('stream_input')
+        
         # Capture output
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
@@ -607,11 +611,30 @@ class WorkerManager:
         parameters: Optional[Dict[str, Any]] = None,
         timeout: int = 60,
         memory_limit_mb: int = 512,
+        dependencies: Optional[list] = None,
     ) -> ExecutionResult:
         """
         Execute code in the appropriate worker.
+        If dependencies are specified for Python, runs in a sandboxed micro-venv.
+        If code contains `yield`, runs in streaming/generator mode.
         """
-        if language == "python":
+        if language == "python" and dependencies:
+            # --- Isolated venv subprocess execution ---
+            import asyncio
+            return await asyncio.to_thread(
+                self._execute_in_venv,
+                code, node_id, parameters or {},
+                dependencies, timeout,
+            )
+        elif language == "python" and _code_has_yield(code):
+            # --- Streaming generator execution ---
+            import asyncio
+            return await asyncio.to_thread(
+                self._execute_streaming,
+                code, node_id, parameters,
+                timeout, memory_limit_mb,
+            )
+        elif language == "python":
             import asyncio
             return await asyncio.to_thread(
                 self._python_worker.execute,
@@ -629,6 +652,231 @@ class WorkerManager:
                 output="",
                 error=f"Unsupported language: {language}",
             )
+
+    def _execute_streaming(
+        self,
+        code: str,
+        node_id: str,
+        parameters: Optional[Dict[str, Any]] = None,
+        timeout: int = 60,
+        memory_limit_mb: int = 512,
+    ) -> ExecutionResult:
+        """
+        Execute Python code that uses `yield` as a streaming generator.
+        
+        1. Wraps user code in a generator function
+        2. Iterates the generator, pushing each yielded DataFrame to a StreamChannel
+        3. Returns total chunk/row stats
+        """
+        import threading
+
+        from .stream_channel import get_stream_registry, _to_record_batch
+
+        registry_stream = get_stream_registry()
+
+        # Prepare namespace (same as PythonWorker.execute)
+        namespace: Dict[str, Any] = {}
+        safe_params = parameters or {}
+        namespace['params'] = safe_params
+        namespace['inputs'] = safe_params.copy()
+
+        for key, value in safe_params.items():
+            if value is not None:
+                namespace[key] = value
+
+        self._python_worker.registry.inject_into_namespace(namespace, node_id)
+
+        for key, value in namespace.items():
+            if key not in ['params', 'inputs', '__builtins__'] and not key.startswith('_'):
+                namespace['inputs'][key] = value
+
+        # Inject stream_input helper for consumers
+        _inject_stream_input(namespace, node_id)
+
+        initial_keys = set(namespace.keys())
+
+        # Wrap user code in a generator function
+        wrapped_code = f"def __gardenia_generator__():\n"
+        for line in code.splitlines():
+            wrapped_code += f"    {line}\n"
+
+        # Capture output
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+
+        # Execution state
+        exec_state = {"error": None, "chunks": 0, "total_rows": 0}
+
+        def run_generator():
+            try:
+                with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                    exec(wrapped_code, namespace)
+                    gen = namespace['__gardenia_generator__']()
+
+                    for chunk in gen:
+                        if chunk is None:
+                            continue
+                        try:
+                            batch = _to_record_batch(chunk)
+                            exec_state["chunks"] += 1
+                            exec_state["total_rows"] += batch.num_rows
+
+                            # Store the latest chunk in PlasmaStore too
+                            # so downstream nodes can access it via registry
+                            log.info(
+                                f"Stream: {node_id} yielded chunk "
+                                f"#{exec_state['chunks']} "
+                                f"({batch.num_rows} rows)"
+                            )
+                        except Exception as e:
+                            log.warning(f"Stream: failed to convert chunk: {e}")
+            except Exception as e:
+                exec_state["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+
+        # Run in thread with timeout
+        thread = threading.Thread(target=run_generator, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout)
+
+        if thread.is_alive():
+            return ExecutionResult(
+                status="timeout",
+                output=stdout_capture.getvalue(),
+                error=f"Streaming execution timed out after {timeout} seconds",
+            )
+
+        if exec_state["error"]:
+            from .errors import parse_python_error
+            error_data = parse_python_error(exec_state["error"], node_id)
+            return ExecutionResult(
+                status="error",
+                output=stdout_capture.getvalue(),
+                error=exec_state["error"],
+                error_data=error_data,
+            )
+
+        # Extract new variables
+        new_keys = set(namespace.keys()) - initial_keys - {'__gardenia_generator__'}
+        self._python_worker.registry.extract_from_namespace(
+            namespace,
+            node_id=node_id,
+            exclude=initial_keys | {'__gardenia_generator__'},
+        )
+
+        return ExecutionResult(
+            status="streaming",
+            output=stdout_capture.getvalue(),
+            variables_created=new_keys if new_keys else None,
+        )
+
+    def _execute_in_venv(
+        self,
+        code: str,
+        node_id: str,
+        parameters: Dict[str, Any],
+        dependencies: list,
+        timeout: int = 60,
+    ) -> ExecutionResult:
+        """
+        Execute Python code inside a micro-venv subprocess.
+        
+        1. Ensure venv exists (VenvManager handles caching)
+        2. Serialize inputs (parameters + registry variables)
+        3. Run code via subprocess with the venv's python
+        4. Parse outputs and extract variables back
+        """
+        import subprocess as sp
+        import tempfile
+
+        from .venv_manager import get_venv_manager
+
+        mgr = get_venv_manager()
+
+        # 1. Ensure venv
+        try:
+            venv_python = str(mgr.ensure_venv(dependencies))
+        except RuntimeError as e:
+            return ExecutionResult(
+                status="error",
+                output="",
+                error=f"Failed to create venv for dependencies {dependencies}: {e}",
+            )
+
+        # 2. Prepare inputs from parameters + registry
+        inputs = dict(parameters) if parameters else {}
+
+        # Inject registry variables
+        namespace: Dict[str, Any] = {}
+        self._python_worker.registry.inject_into_namespace(namespace, node_id)
+        for k, v in namespace.items():
+            if k not in ('__builtins__',) and not k.startswith('_'):
+                inputs[k] = v
+
+        # 3. Build the wrapper script
+        #    We serialize inputs as JSON, run user code, then output variables as JSON
+        wrapper = _build_venv_wrapper(code, inputs, node_id)
+
+        # 4. Execute in subprocess
+        try:
+            result = sp.run(
+                [venv_python, "-c", wrapper],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except sp.TimeoutExpired:
+            return ExecutionResult(
+                status="timeout",
+                output="",
+                error=f"Execution timed out after {timeout} seconds (venv subprocess)",
+            )
+
+        # 5. Parse output
+        stdout = result.stdout
+        stderr = result.stderr
+
+        if result.returncode != 0:
+            error_msg = stderr.strip() or stdout.strip() or f"Process exited with code {result.returncode}"
+            return ExecutionResult(
+                status="error",
+                output=stdout,
+                error=error_msg,
+            )
+
+        # Extract the __GARDENIA_VARS__ JSON block from the end of stdout
+        output_lines = stdout.split("\n")
+        user_output_lines = []
+        vars_json = None
+
+        for line in output_lines:
+            if line.startswith("__GARDENIA_VARS__:"):
+                vars_json = line[len("__GARDENIA_VARS__:"):]
+            else:
+                user_output_lines.append(line)
+
+        user_output = "\n".join(user_output_lines).rstrip()
+
+        # 6. Extract variables back into registry
+        new_var_names: set = set()
+        if vars_json:
+            try:
+                extracted = json.loads(vars_json)
+                for name, value in extracted.items():
+                    self._python_worker.registry.set(
+                        name=name,
+                        value=value,
+                        scope=VariableScope.WORKFLOW,
+                        node_id=node_id,
+                    )
+                    new_var_names.add(name)
+            except json.JSONDecodeError:
+                pass  # Couldn't parse vars, not fatal
+
+        return ExecutionResult(
+            status="success",
+            output=user_output,
+            variables_created=new_var_names if new_var_names else None,
+        )
     
     def get_registry(self) -> VariableRegistry:
         """Get the variable registry"""
@@ -647,6 +895,117 @@ class WorkerManager:
 
 # Module-level instance
 _worker_manager: Optional[WorkerManager] = None
+
+
+def _code_has_yield(code: str) -> bool:
+    """
+    Detect if user code contains a `yield` statement.
+    Uses AST parsing to avoid false positives from comments/strings.
+    """
+    import ast
+    try:
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Yield, ast.YieldFrom)):
+                return True
+        return False
+    except SyntaxError:
+        # If code won't parse, fall back to simple text check
+        return False
+
+
+def _inject_stream_input(namespace: Dict[str, Any], node_id: str) -> None:
+    """
+    Inject a `stream_input(var_name)` helper into the execution namespace.
+    Consumer nodes call this to iterate over chunks from an upstream producer.
+    
+    Currently returns a list with the full variable value (backward compat).
+    When a StreamChannel exists, it will iterate over live chunks.
+    """
+    from .stream_channel import get_stream_registry
+
+    def stream_input(var_name: str = "data"):
+        """
+        Iterate over chunks from an upstream streaming node.
+        If no stream is active, wraps the existing variable as a single chunk.
+        """
+        registry = get_stream_registry()
+
+        # Check for any active channel that targets this node
+        channels = registry.get_channels_for_consumer(node_id)
+        for ch in channels:
+            if ch.var_name == var_name:
+                # Read live chunks from the stream
+                return ch.read_batches_sync()
+
+        # Fallback: wrap existing variable as a single-element list
+        val = namespace.get(var_name)
+        if val is not None:
+            return iter([val])
+        return iter([])
+
+    namespace['stream_input'] = stream_input
+
+
+def _build_venv_wrapper(code: str, inputs: Dict[str, Any], node_id: str) -> str:
+    """
+    Build a self-contained Python script that:
+    1. Deserializes input variables from embedded JSON
+    2. Runs the user's code
+    3. Serializes new variables back as __GARDENIA_VARS__ JSON line
+    
+    Only JSON-serializable variables are passed back. Non-serializable
+    objects (DataFrames, models, etc.) are silently skipped.
+    """
+    # Filter inputs to only JSON-serializable values
+    safe_inputs: Dict[str, Any] = {}
+    for k, v in inputs.items():
+        try:
+            json.dumps(v)
+            safe_inputs[k] = v
+        except (TypeError, ValueError):
+            pass  # Skip non-serializable inputs
+
+    inputs_json = json.dumps(safe_inputs)
+    # Escape for embedding inside a Python string
+    inputs_escaped = inputs_json.replace("\\", "\\\\").replace("'", "\\'")
+
+    wrapper = f"""
+import json, sys
+
+# --- Inject input variables ---
+_inputs = json.loads('{inputs_escaped}')
+_initial_vars = set(dir())
+_initial_vars.update({{'_inputs', '_initial_vars', '__builtins__'}})
+
+for _k, _v in _inputs.items():
+    globals()[_k] = _v
+
+# Also expose params and inputs dicts
+params = _inputs.copy()
+inputs = _inputs.copy()
+_initial_vars.update({{'params', 'inputs', '_k', '_v'}})
+
+# --- User code ---
+{code}
+
+# --- Extract new variables ---
+_new_vars = {{}}
+for _name in set(dir()) - _initial_vars:
+    if _name.startswith('_'):
+        continue
+    _val = globals().get(_name)
+    if _val is None or callable(_val):
+        continue
+    try:
+        json.dumps(_val)
+        _new_vars[_name] = _val
+    except (TypeError, ValueError):
+        pass  # Skip non-serializable
+
+print("__GARDENIA_VARS__:" + json.dumps(_new_vars))
+"""
+    return wrapper
 
 
 def get_worker_manager() -> WorkerManager:

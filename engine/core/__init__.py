@@ -21,6 +21,7 @@ from .variable_registry import VariableRegistry, VariableScope
 from .worker_manager import WorkerManager, WorkerType
 from .storage import ArrowStorage
 from .plasma_store import PlasmaStore, get_plasma_store
+from .stream_channel import StreamChannel, StreamRegistry, get_stream_registry
 from .ray_backend import RayDAGRunner, ensure_ray, shutdown_ray
 
 __all__ = [
@@ -34,6 +35,9 @@ __all__ = [
     'ArrowStorage',
     'PlasmaStore',
     'get_plasma_store',
+    'StreamChannel',
+    'StreamRegistry',
+    'get_stream_registry',
     'RayDAGRunner',
     'ensure_ray',
     'shutdown_ray',

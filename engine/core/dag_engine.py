@@ -27,6 +27,7 @@ class ExecutionState(Enum):
     PENDING = "pending"
     QUEUED = "queued"
     RUNNING = "running"
+    STREAMING = "streaming"  # Yielding chunks — downstream can start
     SUCCESS = "success"
     ERROR = "error"
     SKIPPED = "skipped"
@@ -48,6 +49,7 @@ class DAGNode:
     error: Optional[str] = None
     timeout: int = 60  # Execution timeout in seconds
     memory_limit: int = 512  # Memory limit in MB (Python only)
+    dependencies: List[str] = field(default_factory=list)  # Per-node pip deps
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -62,6 +64,7 @@ class DAGNode:
             "error": self.error,
             "timeout": self.timeout,
             "memory_limit": self.memory_limit,
+            "dependencies": self.dependencies,
         }
 
 
@@ -449,6 +452,22 @@ class DAGExecutor:
                 created_vars = result.get("variables_created")
                 if created_vars:
                     # Convert set to list for JSON serialization
+                    var_list = list(created_vars) if isinstance(created_vars, set) else created_vars
+                    self._emit_variables(node_id, var_list)
+            elif status == "streaming":
+                # Node is a generator – it yielded chunks.
+                # By the time we get here the generator has finished and
+                # all chunks have been pushed to the StreamChannel.
+                self._update_state(node_id, ExecutionState.SUCCESS)
+                chunks = result.get("chunks_produced", 0)
+                rows = result.get("total_rows", 0)
+                self._emit_output(
+                    node_id,
+                    f"Streamed {chunks} chunks ({rows:,} rows total)\n"
+                    + result.get("output", "")
+                )
+                created_vars = result.get("variables_created")
+                if created_vars:
                     var_list = list(created_vars) if isinstance(created_vars, set) else created_vars
                     self._emit_variables(node_id, var_list)
             elif status == "timeout":

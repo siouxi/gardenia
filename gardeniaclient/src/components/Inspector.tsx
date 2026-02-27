@@ -1,5 +1,5 @@
 import { ToolParameter } from '../types/ToolDefinition';
-import { Settings, Sliders, FileText, Type, Hash, List, Variable, ChevronRight, Clock, HardDrive } from 'lucide-react';
+import { Settings, Sliders, FileText, Type, Hash, List, Variable, ChevronRight, Clock, HardDrive, Package, X } from 'lucide-react';
 import { useState } from 'react';
 import { VariableInspector } from './VariableInspector';
 
@@ -13,6 +13,7 @@ interface InspectorProps {
 export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorProps) => {
     const [chatInput, setChatInput] = useState('');
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [depInput, setDepInput] = useState('');
     const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([
         { role: 'assistant', content: 'Hello! I am Carmilla, your assistant. How can I help you with your workflow today?' }
     ]);
@@ -258,6 +259,61 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                                                             className="w-full bg-[#1f1f23] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-[#d97706] outline-none"
                                                         />
                                                         <span className="text-[9px] text-[#444] mt-1 block">Max memory usage (Python only)</span>
+                                                    </div>
+                                                )}
+
+                                                {/* Per-Node Dependencies */}
+                                                {node.data.language !== 'r' && (
+                                                    <div>
+                                                        <label className="text-[10px] text-[#666] flex items-center gap-1 mb-1.5">
+                                                            <Package size={10} />
+                                                            Dependencies
+                                                        </label>
+
+                                                        {/* Existing chips */}
+                                                        <div className="flex flex-wrap gap-1 mb-1.5">
+                                                            {(node.data.dependencies || []).map((dep: string, idx: number) => (
+                                                                <span
+                                                                    key={idx}
+                                                                    className="inline-flex items-center gap-1 bg-[#2a2a3a] text-purple-300 text-[10px] px-2 py-0.5 rounded-full border border-purple-500/20"
+                                                                >
+                                                                    {dep}
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const updated = [...(node.data.dependencies || [])];
+                                                                            updated.splice(idx, 1);
+                                                                            onUpdate(node.id, { ...node.data, dependencies: updated });
+                                                                        }}
+                                                                        className="text-purple-400/60 hover:text-red-400 transition-colors"
+                                                                    >
+                                                                        <X size={8} />
+                                                                    </button>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+
+                                                        {/* Input for new dep */}
+                                                        <input
+                                                            type="text"
+                                                            value={depInput}
+                                                            onChange={(e) => setDepInput(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' && depInput.trim()) {
+                                                                    e.preventDefault();
+                                                                    const current = node.data.dependencies || [];
+                                                                    if (!current.includes(depInput.trim())) {
+                                                                        onUpdate(node.id, {
+                                                                            ...node.data,
+                                                                            dependencies: [...current, depInput.trim()],
+                                                                        });
+                                                                    }
+                                                                    setDepInput('');
+                                                                }
+                                                            }}
+                                                            placeholder="e.g. biopython==1.79 ↵"
+                                                            className="w-full bg-[#1f1f23] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-purple-500 outline-none placeholder:text-[#444]"
+                                                        />
+                                                        <span className="text-[9px] text-[#444] mt-1 block">Isolated venv per node. Type package + Enter.</span>
                                                     </div>
                                                 )}
                                             </div>
