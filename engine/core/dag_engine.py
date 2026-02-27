@@ -123,6 +123,7 @@ class DAGExecutor:
         self._active_tasks: Set[asyncio.Task] = set()
         self._execute_node_fn: Optional[Callable] = None
         self._branch_results: Dict[str, str] = {}  # node_id -> chosen branch handle
+        self._ray_runner = None  # RayDAGRunner instance when using Ray backend
     
     def get_downstream_nodes(self, start_id: str) -> Set[str]:
         """
@@ -223,6 +224,7 @@ class DAGExecutor:
         self,
         execute_node_fn: Callable[[DAGNode], Any],
         parallel: bool = False,
+        backend: str = "local",  # "local" | "ray"
         start_from: Optional[str] = None,
         only_node: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -231,7 +233,8 @@ class DAGExecutor:
         
         Args:
             execute_node_fn: Async function to execute a single node
-            parallel: If True, run independent nodes in parallel using an event-driven queue
+            parallel: If True, run independent nodes in parallel
+            backend: Execution backend — 'local' (asyncio) or 'ray' (distributed)
             start_from: If set, skip all nodes upstream of this node and execute only
                         this node + its downstream descendants.
             only_node: If set, execute ONLY this single node (all others are skipped).
@@ -256,7 +259,27 @@ class DAGExecutor:
             results[sid] = {"status": "skipped", "output": "Skipped (partial execution)"}
         
         try:
-            if parallel:
+            if parallel and backend == "ray":
+                # --- Ray distributed backend ---
+                from .ray_backend import RayDAGRunner
+                runner = RayDAGRunner(
+                    nodes=self.nodes,
+                    edges=self.edges,
+                    adjacency=dict(self._adjacency),
+                    in_degree=self._in_degree.copy(),
+                    edges_by_source=dict(self._edges_by_source),
+                    on_state_change=self.on_state_change,
+                    on_output=self.on_output,
+                    on_variables=self.on_variables,
+                )
+                self._ray_runner = runner
+                results = await runner.execute(skip_ids, execute_node_fn)
+                
+                # Sync branch results back
+                self._branch_results.update(runner._branch_results)
+                return results
+
+            elif parallel:
                 in_degree = self._in_degree.copy()
                 ready_queue = asyncio.Queue()
                 
@@ -464,8 +487,12 @@ class DAGExecutor:
         """Cancel ongoing execution"""
         self._cancelled = True
         self._cancel_event.set()
+        # Cancel asyncio tasks
         for task in self._active_tasks:
             task.cancel()
+        # Cancel Ray runner if active
+        if self._ray_runner is not None:
+            self._ray_runner.cancel()
         for node_id, node in self.nodes.items():
             if node.state in (ExecutionState.PENDING, ExecutionState.QUEUED):
                 self._update_state(node_id, ExecutionState.CANCELLED)

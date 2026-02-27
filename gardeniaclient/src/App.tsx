@@ -15,6 +15,7 @@ import { CustomMiniMap } from './components/CustomMiniMap';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { PackageManager } from './components/PackageManager';
+import { EnginePreferences } from './components/EnginePreferences';
 import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
 import { validateWorkflowLibraries, installMissingLibraries } from './utils/LibraryValidator';
@@ -508,7 +509,9 @@ const Flow = () => {
 
     // --- Workflow data builder (reused by full, partial, and only execution) ---
     const buildWorkflowData = useCallback(() => {
+        const backend = localStorage.getItem('gardenia_backend') || 'local';
         return {
+            backend,
             nodes: nodes.map(n => ({
                 id: n.id,
                 type: n.type,
@@ -966,6 +969,7 @@ const Flow = () => {
     const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
     const [isEditMenuOpen, setIsEditMenuOpen] = useState(false);
     const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+    const [preferencesTab, setPreferencesTab] = useState<'engine' | 'libraries'>('engine');
     const [showMiniMap, setShowMiniMap] = useState(true);
 
     return (
@@ -1315,17 +1319,47 @@ const Flow = () => {
             {/* Preferences Modal */}
             {isPreferencesOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
-                    <div className="bg-[#1f1f23] border border-[#333] rounded-lg shadow-2xl p-6 w-[800px] max-w-full transform scale-100 transition-all">
-                        <h2 className="text-xl font-bold text-[#ccc] mb-4 flex items-center gap-2">
-                            <Settings size={20} />
-                            Library Manager
-                        </h2>
-
-                        <div className="flex flex-col h-[500px] mb-4">
-                            <PackageManager />
+                    <div className="bg-[#1f1f23] border border-[#333] rounded-lg shadow-2xl w-[850px] max-w-full transform scale-100 transition-all flex flex-col" style={{ height: '580px' }}>
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 pt-5 pb-0">
+                            <h2 className="text-xl font-bold text-[#ccc] flex items-center gap-2">
+                                <Settings size={20} />
+                                Preferences
+                            </h2>
                         </div>
 
-                        <div className="flex justify-end">
+                        {/* Tabs */}
+                        <div className="flex gap-1 px-6 pt-3 pb-0">
+                            <button
+                                onClick={() => setPreferencesTab('engine')}
+                                className={`px-4 py-1.5 text-xs font-medium rounded-t-md transition-colors ${preferencesTab === 'engine'
+                                    ? 'bg-[#2a2a2a] text-emerald-400 border border-[#333] border-b-[#2a2a2a]'
+                                    : 'text-[#888] hover:text-[#ccc] hover:bg-[#252528]'
+                                    }`}
+                            >
+                                ⚡ Engine
+                            </button>
+                            <button
+                                onClick={() => setPreferencesTab('libraries')}
+                                className={`px-4 py-1.5 text-xs font-medium rounded-t-md transition-colors ${preferencesTab === 'libraries'
+                                    ? 'bg-[#2a2a2a] text-emerald-400 border border-[#333] border-b-[#2a2a2a]'
+                                    : 'text-[#888] hover:text-[#ccc] hover:bg-[#252528]'
+                                    }`}
+                            >
+                                📦 Libraries
+                            </button>
+                        </div>
+
+                        {/* Tab Content */}
+                        <div className="flex-1 overflow-hidden px-6 pt-4 pb-2">
+                            <div className="h-full bg-[#2a2a2a] rounded-lg border border-[#333] p-4 overflow-hidden">
+                                {preferencesTab === 'engine' && <EnginePreferences />}
+                                {preferencesTab === 'libraries' && <PackageManager />}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-end px-6 py-3">
                             <button
                                 onClick={() => setIsPreferencesOpen(false)}
                                 className="px-4 py-2 bg-[#333] hover:bg-[#444] text-[#ccc] rounded text-sm transition-colors border border-[#444] hover:border-[#555]"

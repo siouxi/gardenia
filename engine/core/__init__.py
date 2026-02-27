@@ -21,6 +21,7 @@ from .variable_registry import VariableRegistry, VariableScope
 from .worker_manager import WorkerManager, WorkerType
 from .storage import ArrowStorage
 from .plasma_store import PlasmaStore, get_plasma_store
+from .ray_backend import RayDAGRunner, ensure_ray, shutdown_ray
 
 __all__ = [
     'DAGExecutor',
@@ -33,6 +34,9 @@ __all__ = [
     'ArrowStorage',
     'PlasmaStore',
     'get_plasma_store',
+    'RayDAGRunner',
+    'ensure_ray',
+    'shutdown_ray',
 ]
 
 __version__ = '1.0.0'

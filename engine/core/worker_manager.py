@@ -655,3 +655,55 @@ def get_worker_manager() -> WorkerManager:
     if _worker_manager is None:
         _worker_manager = WorkerManager()
     return _worker_manager
+
+
+def execute_in_worker(
+    code: str,
+    language: str,
+    node_id: str,
+    parameters: Optional[Dict[str, Any]] = None,
+    timeout: int = 60,
+    memory_limit_mb: int = 512,
+    registry: Optional[VariableRegistry] = None,
+) -> ExecutionResult:
+    """
+    Standalone execution function for use inside Ray remote tasks.
+
+    Creates a fresh worker (PythonWorker or RWorkerBridge), executes the code,
+    and returns the result. Unlike WorkerManager.execute(), this is synchronous
+    for Python and runs its own event loop for R.
+
+    Args:
+        code: Source code to execute
+        language: 'python' or 'r'
+        node_id: Unique node identifier
+        parameters: Node parameters to inject
+        timeout: Max execution time in seconds
+        memory_limit_mb: Memory limit (Python only)
+        registry: Optional VariableRegistry (creates fresh one if None)
+
+    Returns:
+        ExecutionResult
+    """
+    if registry is None:
+        registry = VariableRegistry()
+
+    if language == "python":
+        worker = PythonWorker(registry)
+        return worker.execute(code, node_id, parameters, timeout, memory_limit_mb)
+    elif language == "r":
+        worker = RWorkerBridge(registry)
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                worker.execute(code, node_id, parameters, timeout=timeout)
+            )
+        finally:
+            loop.close()
+            worker.stop()
+    else:
+        return ExecutionResult(
+            status="error",
+            output="",
+            error=f"Unsupported language: {language}",
+        )

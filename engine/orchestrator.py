@@ -43,11 +43,12 @@ class Orchestrator:
     - Reports progress back via stdout
     """
     
-    def __init__(self):
+    def __init__(self, backend: str = "local"):
         self.registry = get_registry()
         self.worker = get_worker_manager()
         self.storage = get_storage()
         self._current_executor: Optional[DAGExecutor] = None
+        self._backend = backend  # "local" | "ray"
     
     def _send_message(self, msg: Dict[str, Any]) -> None:
         """Send JSON message to stdout"""
@@ -207,8 +208,10 @@ class Orchestrator:
             return result_dict
         
         try:
+            # Use backend from request or default
+            backend = workflow_data.get("backend", self._backend)
             results = await self._current_executor.execute(
-                execute_node_wrapper, parallel=True,
+                execute_node_wrapper, parallel=True, backend=backend,
                 start_from=start_from, only_node=only_node
             )
             
@@ -484,16 +487,22 @@ async def handle_sse(request):
         
     return response
 
-async def init_app():
+async def init_app(backend: str = "local"):
     app = web.Application()
-    app['orchestrator'] = Orchestrator()
+    app['orchestrator'] = Orchestrator(backend=backend)
     app.router.add_post('/message', handle_post_message)
     app.router.add_get('/ws', handle_ws)
     app.router.add_get('/events', handle_sse)
     return app
 
-async def start_server():
-    app = await init_app()
+async def start_server(backend: str = "local"):
+    # Initialize Ray if Ray backend is selected
+    if backend == "ray":
+        from core.ray_backend import ensure_ray
+        ensure_ray()
+        log.info("Ray backend enabled — nodes will run as distributed tasks")
+
+    app = await init_app(backend=backend)
     runner = web.AppRunner(app)
     await runner.setup()
     
@@ -505,14 +514,21 @@ async def start_server():
     log.info(f"Starting Orchestrator HTTP IPC server on dynamic port {actual_port}")
     
     # Print the port so the Electron host knows where to connect
-    print(json.dumps({"type": "server_started", "port": actual_port}), flush=True)
+    print(json.dumps({"type": "server_started", "port": actual_port, "backend": backend}), flush=True)
     
     # Keep the server running
     await asyncio.Event().wait()
 
 def main():
     """Main entry point - run an internal HTTP server on an ephemeral port"""
-    asyncio.run(start_server())
+    import argparse
+    parser = argparse.ArgumentParser(description="Gardenia DAG Engine")
+    parser.add_argument(
+        "--backend", choices=["local", "ray"], default="local",
+        help="Execution backend: 'local' (asyncio) or 'ray' (distributed)"
+    )
+    args = parser.parse_args()
+    asyncio.run(start_server(backend=args.backend))
 
 
 if __name__ == "__main__":

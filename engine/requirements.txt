@@ -1,3 +1,5 @@
 rich
 pyarrow>=14.0.0
 pandas>=2.0.0
+ray>=2.9.0
+aiohttp
