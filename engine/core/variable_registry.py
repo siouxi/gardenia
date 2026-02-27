@@ -36,8 +36,9 @@ class Variable:
     type_hint: str = "any"  # Python type hint
     node_id: Optional[str] = None  # Source node for traceability
     is_dataframe: bool = False  # Flag for tabular data
-    ipc_path: Optional[str] = None  # NEW: Path to Arrow IPC/Parquet file on disk if deferred
-    preview: Optional[str] = None   # NEW: String preview for frontend
+    ipc_path: Optional[str] = None  # Path to Arrow IPC/Parquet file on disk if deferred
+    plasma_key: Optional[str] = None  # Key in PlasmaStore (shared memory)
+    preview: Optional[str] = None   # String preview for frontend
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -48,6 +49,7 @@ class Variable:
             "node_id": self.node_id,
             "is_dataframe": self.is_dataframe,
             "ipc_path": self.ipc_path,
+            "plasma_key": self.plasma_key,
             "preview": self.preview,
         }
     
@@ -57,6 +59,8 @@ class Variable:
             # Return preview metadata instead of dropping huge dataframes into JSON
             if self.preview:
                 return self.preview
+            if self.plasma_key:
+                return f"[DataFrame in shared memory: {self.plasma_key}]"
             if hasattr(self.value, 'shape'):
                 return f"DataFrame {self.value.shape}"
             return "[DataFrame]"
@@ -127,6 +131,7 @@ class VariableRegistry:
         type_hint: Optional[str] = None,
         is_dataframe: Optional[bool] = None,
         ipc_path: Optional[str] = None,
+        plasma_key: Optional[str] = None,
         preview: Optional[str] = None,
     ) -> Variable:
         """
@@ -134,12 +139,13 @@ class VariableRegistry:
         
         Args:
             name: Variable name
-            value: Value to store (can be None if ipc_path is provided)
+            value: Value to store (can be None if ipc_path or plasma_key is provided)
             scope: Storage scope (global, workflow, node)
             node_id: Required for NODE scope
             type_hint: Optional Python type hint
             is_dataframe: Optional flag to explicitly mark as dataframe (e.g. from R)
             ipc_path: Optional path to Arrow IPC file for zero-copy
+            plasma_key: Optional key in PlasmaStore (shared memory zero-copy)
             preview: Optional string preview of the data
         """
         if scope == VariableScope.NODE and not node_id:
@@ -152,12 +158,12 @@ class VariableRegistry:
         # Check if it's a dataframe-like object
         if is_dataframe is None and value is not None:
             is_dataframe = self._is_dataframe(value)
-        elif is_dataframe is None and ipc_path is not None:
-            is_dataframe = True # IPC files are dataframes
+        elif is_dataframe is None and (ipc_path is not None or plasma_key is not None):
+            is_dataframe = True  # IPC files and plasma refs are dataframes
         
-        # DO NOT store the heavy dataframe in memory if we have it on disk!
+        # DO NOT store the heavy dataframe in memory if we have it on disk/shm!
         # The executor will handle loading it back when needed.
-        if is_dataframe and ipc_path and value is not None:
+        if is_dataframe and (ipc_path or plasma_key) and value is not None:
              # Discard the memory copy, keep only the reference!
              stored_value = None 
         else:
@@ -171,6 +177,7 @@ class VariableRegistry:
             node_id=node_id,
             is_dataframe=is_dataframe,
             ipc_path=ipc_path,
+            plasma_key=plasma_key,
             preview=preview,
         )
         
@@ -361,15 +368,30 @@ class VariableRegistry:
     def inject_into_namespace(self, namespace: Dict[str, Any], node_id: Optional[str] = None) -> None:
         """
         Inject all accessible variables into a namespace dict.
-        Used for code execution. Lazily loads DataFrames from IPC paths.
+        Used for code execution. Lazily loads DataFrames from PlasmaStore
+        (shared memory) first, then falls back to IPC paths on disk.
         """
         import pyarrow.parquet as pq
         import pyarrow.ipc as ipc
+
+        # Import PlasmaStore for shared-memory resolution
+        from .plasma_store import get_plasma_store
+        plasma = get_plasma_store()
         
         def _resolve_value(var: Variable) -> Any:
+            # Priority 1: PlasmaStore (shared memory — zero-copy)
+            if var.is_dataframe and var.plasma_key:
+                try:
+                    df = plasma.get_as_pandas(var.plasma_key)
+                    if df is not None:
+                        return df
+                    log.warning(f"PlasmaStore key '{var.plasma_key}' returned None, trying ipc_path fallback")
+                except Exception as e:
+                    log.warning(f"PlasmaStore read failed for {var.name}: {e}")
+
+            # Priority 2: Disk-based IPC path (fallback)
             if var.is_dataframe and var.ipc_path:
                 try:
-                    # Depending on if it's parquet or arrow ipc format
                     if var.ipc_path.endswith('.parquet'):
                         return pq.read_table(var.ipc_path).to_pandas()
                     else:
@@ -379,6 +401,7 @@ class VariableRegistry:
                 except Exception as e:
                     log.error(f"Failed to lazy-load dataframe {var.name} from {var.ipc_path}: {e}")
                     return None
+
             return var.value
 
         with self._lock:

@@ -2,7 +2,7 @@
   "datasets": [
     {
       "name": "data",
-      "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/data.parquet",
+      "path": "/home/nicolas/Documentos/gardenia/gardeniaclient/.gardenia_data/data.parquet",
       "num_rows": 50000,
       "num_columns": 7,
       "columns": [
@@ -36,7 +36,7 @@
         }
       ],
       "size_bytes": 205741,
-      "created_at": "2026-02-23T20:50:01.042220",
+      "created_at": "2026-02-26T18:30:57.032907",
       "source_node_id": "csv-input-1771683865840",
       "preview": [
         {
@@ -88,7 +88,7 @@
     },
     {
       "name": "result",
-      "path": "/home/nicolas/Descargas/gardenia/gardeniaclient/.gardenia_data/result.parquet",
+      "path": "/home/nicolas/Documentos/gardenia/gardeniaclient/.gardenia_data/result.parquet",
       "num_rows": 50000,
       "num_columns": 6,
       "columns": [
@@ -118,7 +118,7 @@
         }
       ],
       "size_bytes": 186147,
-      "created_at": "2026-02-23T20:50:01.089434",
+      "created_at": "2026-02-26T18:30:57.076923",
       "source_node_id": "select-columns-1771684750521",
       "preview": [
         {

@@ -20,6 +20,7 @@ from .dag_engine import DAGExecutor, DAGNode, ExecutionState
 from .variable_registry import VariableRegistry, VariableScope
 from .worker_manager import WorkerManager, WorkerType
 from .storage import ArrowStorage
+from .plasma_store import PlasmaStore, get_plasma_store
 
 __all__ = [
     'DAGExecutor',
@@ -30,6 +31,8 @@ __all__ = [
     'WorkerManager',
     'WorkerType',
     'ArrowStorage',
+    'PlasmaStore',
+    'get_plasma_store',
 ]
 
 __version__ = '1.0.0'

@@ -98,6 +98,10 @@ process_command <- function(command_json, env) {
                         output_dir <- if (!is.null(request$output_dir)) request$output_dir else tempdir()
                         if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
+                        # Prefer shared memory (/dev/shm/) for zero-copy with Python
+                        shm_dir <- "/dev/shm"
+                        use_shm <- dir.exists(shm_dir) && file.access(shm_dir, 2) == 0
+
                         for (var_name in vars) {
                             # Skip 'inputs' variable itself to avoid circularity/redundancy
                             if (var_name == "inputs") next
@@ -113,8 +117,14 @@ process_command <- function(command_json, env) {
 
                             if (is.data.frame(val)) {
                                 # Write DataFrame to Arrow IPC
-                                fname <- paste0(request$id, "_", var_name, ".arrow")
-                                fpath <- file.path(output_dir, fname)
+                                fname <- paste0("gardenia_r_", request$id, "_", var_name, ".arrow")
+
+                                # Use shared memory when available for zero-copy
+                                if (use_shm) {
+                                    fpath <- file.path(shm_dir, fname)
+                                } else {
+                                    fpath <- file.path(output_dir, fname)
+                                }
 
                                 tryCatch(
                                     {
@@ -123,7 +133,7 @@ process_command <- function(command_json, env) {
                                         val_meta$ipc_path <- fpath
                                         val_meta$is_dataframe <- TRUE
                                         val_meta$preview <- paste("DataFrame:", nrow(val), "rows x", ncol(val), "cols")
-                                        val_meta$value <- "[DataFrame stored in IPC]"
+                                        val_meta$value <- "[DataFrame stored in shared memory]"
                                     },
                                     error = function(e) {
                                         val_meta$error <- paste("Failed to write IPC:", e$message)

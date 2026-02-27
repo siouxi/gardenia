@@ -35,6 +35,7 @@ except ImportError:
     ARROW_AVAILABLE = False
 
 from .variable_registry import VariableRegistry, VariableScope, get_registry
+from .plasma_store import get_plasma_store, PlasmaStore
 from .errors import GardeniaError, parse_python_error, parse_r_error, ErrorCategory
 
 log = logging.getLogger(__name__)
@@ -195,6 +196,40 @@ class PythonWorker:
             exclude=self._initial_keys,
         )
         
+        # ── PlasmaStore: move DataFrames to shared memory ──
+        if ARROW_AVAILABLE:
+            plasma = get_plasma_store()
+            for var_name in new_keys:
+                val = self._namespace.get(var_name)
+                if val is None:
+                    continue
+                # Check if it's a DataFrame-like object
+                is_df = False
+                if hasattr(val, 'to_parquet'):  # pandas DataFrame
+                    is_df = True
+                elif isinstance(val, pa.Table):
+                    is_df = True
+                
+                if is_df:
+                    try:
+                        plasma_key = f"{node_id}_{var_name}"
+                        ref = plasma.put(plasma_key, val)
+                        # Update registry to use plasma_key instead of in-memory value
+                        self.registry.set(
+                            name=var_name,
+                            value=None,
+                            scope=VariableScope.WORKFLOW,
+                            node_id=node_id,
+                            type_hint="DataFrame",
+                            is_dataframe=True,
+                            plasma_key=plasma_key,
+                            preview=ref.preview_str(),
+                        )
+                        log.info(f"PlasmaStore: Python var '{var_name}' → shared memory ({ref.byte_size / 1024:.1f} KB)")
+                    except Exception as e:
+                        log.warning(f"PlasmaStore: failed to store '{var_name}': {e} (kept in registry)")
+        # ── End PlasmaStore ──
+        
         output = stdout_capture.getvalue()
         stderr = stderr_capture.getvalue()
         
@@ -318,19 +353,40 @@ class RWorkerBridge:
         return self._process is not None and self._process.returncode is None
     
     def _create_input_ipcs(self, node_id: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-        """ Create Arrow IPC files for all input dataframes for R. Returns list of {name, path}. """
+        """ 
+        Create Arrow IPC file references for all input dataframes for R.
+        Returns list of {name, path}.
+        
+        Priority: PlasmaStore (shared memory path) > in-memory DF > dict of lists.
+        """
         if not ARROW_AVAILABLE:
             return []
-            
-        # Only inject workflow variables that seem to be dataframes
-        # Or inject parameters that are tables
+        
+        plasma = get_plasma_store()
+        ipc_files = []
+        
+        # --- 1. Check PlasmaStore for shared-memory references ---
+        # Scan workflow-level variables for plasma_key references
+        from .variable_registry import Variable
+        with self.registry._lock:
+            for var_name, var in self.registry._workflow.items():
+                if var.is_dataframe and var.plasma_key:
+                    ref = plasma.get_ref(var.plasma_key)
+                    if ref and os.path.exists(ref.shm_path):
+                        # R can read /dev/shm/ directly via arrow::read_ipc_file
+                        ipc_files.append({"name": var_name, "path": ref.shm_path})
+                        log.debug(f"PlasmaStore → R: '{var_name}' via shm_path {ref.shm_path}")
+                        continue
+        
+        # --- 2. Fallback: materialize in-memory DataFrames to IPC files ---
         workflow_vars = self.registry.get_all_workflow_vars()
         all_inputs = {**(parameters or {}), **workflow_vars}
         
-        ipc_files = []
+        # Skip vars already handled via PlasmaStore
+        already_handled = {item["name"] for item in ipc_files}
         
         for name, target_df in all_inputs.items():
-            if target_df is None:
+            if target_df is None or name in already_handled:
                 continue
                 
             is_df = False
@@ -339,7 +395,6 @@ class RWorkerBridge:
             elif hasattr(target_df, 'to_parquet'): # Pandas
                 is_df = True
             elif isinstance(target_df, dict) and all(isinstance(v, list) for v in target_df.values()):
-                # dictionary of lists could be convertible
                 is_df = True
 
             if is_df:
@@ -466,6 +521,7 @@ class RWorkerBridge:
             variables = response.get("variables", [])
             
             created_vars = set()
+            plasma = get_plasma_store()
             
             # Process returned vars
             for v in variables:
@@ -474,17 +530,33 @@ class RWorkerBridge:
                 
                 val = v.get("value")
                 ipc_path = None
+                plasma_key = None
                 
-                # Check for IPC file
+                # Check for IPC file from R
                 if v.get("is_dataframe") and v.get("ipc_path") and ARROW_AVAILABLE:
                     ipc_path = v.get("ipc_path")
                     if os.path.exists(ipc_path):
                         val = None
                         log.debug(f"Received Arrow IPC reference for {name}: {ipc_path}")
+                        
+                        # Register R output in PlasmaStore for zero-copy access
+                        try:
+                            plasma_key = f"{node_id}_{name}"
+                            # Read into Arrow Table and store in shared memory
+                            with pa.ipc.open_file(ipc_path) as reader:
+                                table = reader.read_all()
+                            ref = plasma.put(plasma_key, table)
+                            log.info(
+                                f"PlasmaStore: R var '{name}' → shared memory "
+                                f"({ref.byte_size / 1024:.1f} KB)"
+                            )
+                        except Exception as e:
+                            log.warning(f"PlasmaStore: failed to store R var '{name}': {e}")
+                            plasma_key = None
                     else:
                         ipc_path = None
                 
-                if val is not None or ipc_path is not None:
+                if val is not None or ipc_path is not None or plasma_key is not None:
                     created_vars.add(name)
                     self.registry.set(
                         name=name,
@@ -494,7 +566,8 @@ class RWorkerBridge:
                         type_hint=v.get("type_hint"),
                         is_dataframe=v.get("is_dataframe", False),
                         ipc_path=ipc_path,
-                        preview=v.get("preview")
+                        plasma_key=plasma_key,
+                        preview=v.get("preview"),
                     )
 
             if stdout_str.strip():
@@ -562,9 +635,14 @@ class WorkerManager:
         return self.registry
     
     def reset(self) -> None:
-        """Reset workers and registry"""
+        """Reset workers, registry, and shared memory"""
         self.registry.clear_workflow()
         self._python_worker = PythonWorker(self.registry)
+        # Clear all shared memory segments
+        try:
+            get_plasma_store().clear()
+        except Exception as e:
+            log.warning(f"Failed to clear PlasmaStore: {e}")
 
 
 # Module-level instance
