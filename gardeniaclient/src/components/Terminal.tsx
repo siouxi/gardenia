@@ -73,6 +73,10 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
         setPythonHistory([]);
     };
 
+    const clearConsoleLogs = () => {
+        setConsoleLogs([]);
+    };
+
     const outputRef = useRef<HTMLDivElement>(null);
 
     const [showTimestamps, setShowTimestamps] = useState(true);
@@ -569,6 +573,14 @@ export const Terminal = ({ onAddTestNode, onLogToConsole }: {
                             className={`px-2 py-0.5 text-[10px] rounded border border-slate-600 ${showTimestamps ? 'bg-emerald-900/50 text-emerald-400' : 'bg-[#2a2a2a] text-slate-400'}`}
                         >
                             Time
+                        </button>
+                        <button
+                            onClick={clearConsoleLogs}
+                            className="px-2 py-0.5 text-[10px] rounded border border-slate-600 bg-[#2a2a2a] hover:bg-slate-700 text-slate-400 flex items-center gap-1 transition-colors"
+                            title="Clear Console"
+                        >
+                            <Eraser size={10} />
+                            Clear
                         </button>
                     </div>
                 )}
