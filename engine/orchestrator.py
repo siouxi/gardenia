@@ -116,6 +116,35 @@ class Orchestrator:
         if not nodes:
             return {"status": "error", "error": "No nodes in workflow"}
         
+        # For partial re-runs: clear ONLY the stale outputs of nodes that will
+        # re-execute. This prevents downstream nodes reading old values while
+        # keeping all upstream variables intact for the re-running node to consume.
+        if is_partial:
+            nodes_to_run: set = set()
+            if only_node:
+                nodes_to_run.add(only_node)
+            elif start_from:
+                # Collect start_from + all its descendants in the DAG
+                nodes_to_run.add(start_from)
+                # BFS over adjacency
+                from collections import deque
+                adj: dict = {}
+                for edge in edges:
+                    adj.setdefault(edge.source, []).append(edge.target)
+                queue = deque([start_from])
+                while queue:
+                    nid = queue.popleft()
+                    for child in adj.get(nid, []):
+                        if child not in nodes_to_run:
+                            nodes_to_run.add(child)
+                            queue.append(child)
+            cleared = self.registry.clear_outputs_of_nodes(nodes_to_run)
+            if cleared:
+                log.info(
+                    f"Partial re-run: cleared {cleared} stale variable(s) "
+                    f"from nodes {nodes_to_run}"
+                )
+        
         # Create executor
         self._current_executor = DAGExecutor(
             nodes,
@@ -166,37 +195,54 @@ class Orchestrator:
 
             # Auto-save datasets to storage
             if result.variables_created:
+                from core.plasma_store import get_plasma_store
+                plasma = get_plasma_store()
+                
                 for var_name in result.variables_created:
                     var = self.registry._get_from_scope(var_name, VariableScope.WORKFLOW, None)
                     if not var: continue
                     
-                    # We can auto-save if it's explicitly marked as a dataframe 
+                    # We can auto-save if it's explicitly marked as a dataframe
                     # OR if duck typing says it's a pandas/arrow table in memory
                     val = var.value
                     is_df = var.is_dataframe
                     
                     if not is_df and val is not None:
-                         if hasattr(val, 'to_parquet'): is_df = True
-                         if hasattr(val, 'schema') and hasattr(val, 'num_rows'): is_df = True
+                        if hasattr(val, 'to_parquet'): is_df = True
+                        if hasattr(val, 'schema') and hasattr(val, 'num_rows'): is_df = True
                     
                     if is_df:
                         try:
-                            # If it's a lazy IPC reference from R, we need to read it to convert to Parquet storage
-                            if var.ipc_path and val is None:
-                                import pyarrow.parquet as pq
-                                import pyarrow.ipc as ipc
+                            data_to_save = None
+                            
+                            if val is not None:
+                                # Case 1: Data is in Python memory (pandas, Arrow, dict)
+                                data_to_save = val
+                            elif var.plasma_key:
+                                # Case 2: Data is in PlasmaStore shared memory (zero-copy).
+                                # This is the most common path for Python nodes.
+                                data_to_save = plasma.get(var.plasma_key)
+                                if data_to_save is None:
+                                    log.warning(
+                                        f"Auto-save: PlasmaStore key '{var.plasma_key}' "
+                                        f"for '{var_name}' not found (already cleared?)"
+                                    )
+                            elif var.ipc_path:
+                                # Case 3: Lazy IPC file reference (e.g. R node output)
+                                import pyarrow as pa
                                 if var.ipc_path.endswith('.parquet'):
+                                    import pyarrow.parquet as pq
                                     data_to_save = pq.read_table(var.ipc_path)
                                 else:
-                                    import pyarrow as pa
                                     with pa.ipc.open_file(var.ipc_path) as reader:
                                         data_to_save = reader.read_all()
+                            
+                            if data_to_save is not None:
                                 self.storage.write(var_name, data_to_save, source_node_id=node.id)
+                                log.info(f"Auto-saved dataset '{var_name}' to storage")
                             else:
-                                # Normal memory dataframe
-                                self.storage.write(var_name, val, source_node_id=node.id)
+                                log.debug(f"Auto-save: skipping '{var_name}' — no data source found")
                                 
-                            log.info(f"Auto-saved dataset '{var_name}' to storage")
                         except Exception as e:
                             log.warning(f"Failed to auto-save dataset '{var_name}': {e}")
 

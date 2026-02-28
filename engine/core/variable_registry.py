@@ -135,53 +135,44 @@ class VariableRegistry:
         preview: Optional[str] = None,
     ) -> Variable:
         """
-        Store a variable in the registry.
-        
-        Args:
-            name: Variable name
-            value: Value to store (can be None if ipc_path or plasma_key is provided)
-            scope: Storage scope (global, workflow, node)
-            node_id: Required for NODE scope
-            type_hint: Optional Python type hint
-            is_dataframe: Optional flag to explicitly mark as dataframe (e.g. from R)
-            ipc_path: Optional path to Arrow IPC file for zero-copy
-            plasma_key: Optional key in PlasmaStore (shared memory zero-copy)
-            preview: Optional string preview of the data
+        Store a variable in the registry (thread-safe).
+
+        All type inference and Variable construction happen INSIDE the lock to
+        eliminate the TOCTOU window where concurrent writers can interleave
+        between type detection and the actual dict write.
         """
         if scope == VariableScope.NODE and not node_id:
             raise ValueError("node_id required for NODE scope")
-        
-        # Infer type hint if not provided
-        if type_hint is None and value is not None:
-            type_hint = type(value).__name__
-        
-        # Check if it's a dataframe-like object
-        if is_dataframe is None and value is not None:
-            is_dataframe = self._is_dataframe(value)
-        elif is_dataframe is None and (ipc_path is not None or plasma_key is not None):
-            is_dataframe = True  # IPC files and plasma refs are dataframes
-        
-        # DO NOT store the heavy dataframe in memory if we have it on disk/shm!
-        # The executor will handle loading it back when needed.
-        if is_dataframe and (ipc_path or plasma_key) and value is not None:
-             # Discard the memory copy, keep only the reference!
-             stored_value = None 
-        else:
-             stored_value = value
-             
-        var = Variable(
-            name=name,
-            value=stored_value,
-            scope=scope,
-            type_hint=type_hint or "dataframe",
-            node_id=node_id,
-            is_dataframe=is_dataframe,
-            ipc_path=ipc_path,
-            plasma_key=plasma_key,
-            preview=preview,
-        )
-        
+
         with self._lock:
+            # Infer type hint if not provided
+            if type_hint is None and value is not None:
+                type_hint = type(value).__name__
+
+            # Check if it's a dataframe-like object
+            if is_dataframe is None and value is not None:
+                is_dataframe = self._is_dataframe(value)
+            elif is_dataframe is None and (ipc_path is not None or plasma_key is not None):
+                is_dataframe = True  # IPC files and plasma refs are dataframes
+
+            # DO NOT store the heavy dataframe in memory if we have it on disk/shm!
+            if is_dataframe and (ipc_path or plasma_key) and value is not None:
+                stored_value = None  # discard memory copy, keep only the reference
+            else:
+                stored_value = value
+
+            var = Variable(
+                name=name,
+                value=stored_value,
+                scope=scope,
+                type_hint=type_hint or "dataframe",
+                node_id=node_id,
+                is_dataframe=is_dataframe,
+                ipc_path=ipc_path,
+                plasma_key=plasma_key,
+                preview=preview,
+            )
+
             if scope == VariableScope.GLOBAL:
                 self._global[name] = var
             elif scope == VariableScope.WORKFLOW:
@@ -190,15 +181,15 @@ class VariableRegistry:
                 if node_id not in self._nodes:
                     self._nodes[node_id] = {}
                 self._nodes[node_id][name] = var
-            
-            # Record history
+
+            # Record history (cheap, inside lock is fine)
             self._history.append({
                 "action": "set",
                 "name": name,
                 "scope": scope.value,
                 "node_id": node_id,
             })
-            
+
         return var
         
     def clear(self, scope: Optional[VariableScope] = None) -> None:
@@ -324,6 +315,42 @@ class VariableRegistry:
             self._workflow.clear()
             self._nodes.clear()
             self._history.append({"action": "clear_workflow"})
+
+    def clear_outputs_of_nodes(self, node_ids: set) -> int:
+        """
+        Clear workflow-scope variables that were produced by a specific
+        set of nodes. Used during partial re-execution to remove stale
+        outputs of nodes that are about to re-run, while keeping all
+        other upstream variables intact.
+
+        Args:
+            node_ids: Set of node IDs whose outputs should be cleared.
+
+        Returns:
+            Number of variables removed.
+        """
+        removed = 0
+        with self._lock:
+            stale = [
+                name
+                for name, var in self._workflow.items()
+                if var.node_id in node_ids
+            ]
+            for name in stale:
+                del self._workflow[name]
+                removed += 1
+            # Also clear node-local scopes for those nodes
+            for nid in node_ids:
+                if nid in self._nodes:
+                    del self._nodes[nid]
+                    removed += 1
+            if removed:
+                self._history.append({
+                    "action": "clear_outputs_of_nodes",
+                    "node_ids": list(node_ids),
+                    "removed": removed,
+                })
+        return removed
     
     def clear_all(self) -> None:
         """Clear all scopes"""
@@ -334,23 +361,23 @@ class VariableRegistry:
             self._history.clear()
     
     def list_variables(self, scope: Optional[VariableScope] = None) -> List[Dict[str, Any]]:
-        """List all variables, optionally filtered by scope"""
+        """List all variables, optionally filtered by scope."""
         with self._lock:
             result = []
-            
+
             if scope is None or scope == VariableScope.GLOBAL:
                 for var in self._global.values():
                     result.append(var.to_dict())
-            
+
             if scope is None or scope == VariableScope.WORKFLOW:
                 for var in self._workflow.values():
                     result.append(var.to_dict())
-            
+
             if scope is None or scope == VariableScope.NODE:
                 for node_id, vars_dict in self._nodes.items():
-                    for var in vars_dict.items():
+                    for var in vars_dict.values():  # .values() not .items() — was a bug
                         result.append(var.to_dict())
-            
+
             return result
     
     def to_json(self) -> str:
@@ -370,14 +397,26 @@ class VariableRegistry:
         Inject all accessible variables into a namespace dict.
         Used for code execution. Lazily loads DataFrames from PlasmaStore
         (shared memory) first, then falls back to IPC paths on disk.
-        """
-        import pyarrow.parquet as pq
-        import pyarrow.ipc as ipc
 
-        # Import PlasmaStore for shared-memory resolution
+        IMPORTANT: variable metadata is snapshotted under the lock, but all
+        IO (PlasmaStore reads, file reads) is done OUTSIDE the lock to prevent
+        blocking other threads that need to write to the registry.
+        """
         from .plasma_store import get_plasma_store
         plasma = get_plasma_store()
-        
+
+        # ── Step 1: snapshot all Variable objects under the lock (fast) ──────
+        with self._lock:
+            snapshot: List[Variable] = []
+            for var in self._global.values():
+                snapshot.append(var)
+            for var in self._workflow.values():
+                snapshot.append(var)
+            if node_id and node_id in self._nodes:
+                for var in self._nodes[node_id].values():
+                    snapshot.append(var)
+
+        # ── Step 2: resolve values OUTSIDE the lock (IO may block) ───────────
         def _resolve_value(var: Variable) -> Any:
             # Priority 1: PlasmaStore (shared memory — zero-copy)
             if var.is_dataframe and var.plasma_key:
@@ -385,38 +424,36 @@ class VariableRegistry:
                     df = plasma.get_as_pandas(var.plasma_key)
                     if df is not None:
                         return df
-                    log.warning(f"PlasmaStore key '{var.plasma_key}' returned None, trying ipc_path fallback")
+                    log.warning(
+                        f"PlasmaStore key '{var.plasma_key}' returned None, "
+                        f"trying ipc_path fallback"
+                    )
                 except Exception as e:
                     log.warning(f"PlasmaStore read failed for {var.name}: {e}")
 
-            # Priority 2: Disk-based IPC path (fallback)
+            # Priority 2: Disk-based IPC/Parquet path (fallback)
             if var.is_dataframe and var.ipc_path:
                 try:
+                    import pyarrow as pa
                     if var.ipc_path.endswith('.parquet'):
+                        import pyarrow.parquet as pq
                         return pq.read_table(var.ipc_path).to_pandas()
                     else:
-                        import pyarrow as pa
                         with pa.ipc.open_file(var.ipc_path) as reader:
                             return reader.read_all().to_pandas()
                 except Exception as e:
-                    log.error(f"Failed to lazy-load dataframe {var.name} from {var.ipc_path}: {e}")
+                    log.error(
+                        f"Failed to lazy-load dataframe {var.name} "
+                        f"from {var.ipc_path}: {e}"
+                    )
                     return None
 
             return var.value
 
-        with self._lock:
-            # Global vars first (lowest priority)
-            for name, var in self._global.items():
-                namespace[name] = _resolve_value(var)
-            
-            # Workflow vars
-            for name, var in self._workflow.items():
-                namespace[name] = _resolve_value(var)
-            
-            # Node vars (highest priority)
-            if node_id and node_id in self._nodes:
-                for name, var in self._nodes[node_id].items():
-                    namespace[name] = _resolve_value(var)
+        # Higher-priority sources come last so they win on name collision
+        # (global < workflow < node-local)
+        for var in snapshot:
+            namespace[var.name] = _resolve_value(var)
     
     def extract_from_namespace(
         self,
