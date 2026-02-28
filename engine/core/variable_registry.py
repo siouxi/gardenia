@@ -464,23 +464,35 @@ class VariableRegistry:
         """
         Extract new variables from a namespace after code execution.
         Stores them at workflow scope for sharing between nodes.
+
+        NOTE: We snapshot the namespace keys under a brief lock, but call
+        self.set() outside the global lock. self.set() acquires _lock
+        internally (it's an RLock so re-entrant), and taking the global lock
+        here would cause unnecessary serialization for concurrent streaming nodes.
         """
         exclude = exclude or set()
-        builtins = {'__builtins__', '__name__', '__doc__', '__package__', '__loader__', '__spec__'}
+        builtins = {
+            '__builtins__', '__name__', '__doc__', '__package__',
+            '__loader__', '__spec__',
+        }
         exclude = exclude.union(builtins)
-        
-        with self._lock:
-            for name, value in namespace.items():
-                if name.startswith('_') or name in exclude:
-                    continue
-                
-                # Store at workflow scope for cross-node access
-                self.set(
-                    name=name,
-                    value=value,
-                    scope=VariableScope.WORKFLOW,
-                    node_id=node_id,
-                )
+
+        # Snapshot namespace items (namespace dict lives in this thread only,
+        # so no external locking needed — just copy the pairs we want)
+        items_to_store = [
+            (name, value)
+            for name, value in namespace.items()
+            if not name.startswith('_') and name not in exclude
+        ]
+
+        # Write each variable using the public set() API (which handles its own locking)
+        for name, value in items_to_store:
+            self.set(
+                name=name,
+                value=value,
+                scope=VariableScope.WORKFLOW,
+                node_id=node_id,
+            )
 
 
 # Singleton instance for the current workflow

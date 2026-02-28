@@ -127,48 +127,59 @@ class StreamChannel:
         """Set the event loop (call from the async context)."""
         self._loop = loop
 
-    def write_batch(self, data: Any) -> None:
+    def write_batch(self, data: Any, put_timeout: Optional[float] = None) -> None:
         """
         Write a chunk to the stream (called from producer, possibly sync thread).
         Converts data to Arrow RecordBatch and enqueues it.
         Blocks if the buffer is full (backpressure).
+
+        Args:
+            data: DataFrame-like chunk to send downstream.
+            put_timeout: Max seconds to wait for a consumer queue slot.
+                         Defaults to GARDENIA_STREAM_PUT_TIMEOUT env var or 30s.
+                         Set None to use default.
         """
         if self._closed:
             raise RuntimeError("StreamChannel is closed")
+
+        import os
+        _timeout = put_timeout if put_timeout is not None else float(
+            os.environ.get("GARDENIA_STREAM_PUT_TIMEOUT", "30")
+        )
 
         batch = _to_record_batch(data)
         self.stats.chunks_written += 1
         self.stats.total_rows_written += batch.num_rows
 
         loop = self._get_loop()
-        # Thread-safe put: we may be called from a sync thread
-        
-        # If there are no subscribers yet (e.g. they hasn't started), we can either wait or 
-        # just assume the Orchestrator will have attached them if they exist. 
-        # But wait, `get_or_create_channel` is called by producer *before* consumer in some cases.
-        # Actually in parallel execution, consumers start and call `stream_input` (which registers them)
-        # almost immediately.
-        
-        try:
-            # We must wait for ALL subscriber queues to accept the chunk
-            # asyncio.gather allows concurrent putting (respecting each queue's backpressure)
-            if not self._subscribers:
-                # If no one is listening, we just discard? Or wait?
-                # For safety, let's yield control to let consumers register, then discard if still none.
-                pass
-            else:
-                futures = []
-                for sub_queue in self._subscribers.values():
-                    futures.append(asyncio.run_coroutine_threadsafe(
-                        sub_queue.put(batch), loop
-                    ))
-                for f in futures:
-                    f.result(timeout=300)  # Block until enqueued (backpressure)
-        except asyncio.CancelledError:
-            # The async event loop or the consumer has shut down early.
-            # Stop producing data gracefully.
-            self._closed = True
-            raise RuntimeError("StreamChannel queue cancelled (consumer likely exited)")
+
+        if not self._subscribers:
+            # No consumers registered yet — discard silently
+            return
+
+        import concurrent.futures
+        futures = []
+        for sub_id, sub_queue in self._subscribers.items():
+            futures.append((sub_id, asyncio.run_coroutine_threadsafe(
+                sub_queue.put(batch), loop
+            )))
+
+        for sub_id, f in futures:
+            try:
+                f.result(timeout=_timeout)
+            except concurrent.futures.TimeoutError:
+                # Consumer queue full for _timeout seconds → consumer is dead/stuck
+                self._closed = True
+                raise RuntimeError(
+                    f"StreamChannel: subscriber '{sub_id}' queue full for "
+                    f"{_timeout:.0f}s — consumer may be dead or too slow. "
+                    f"Stopping producer."
+                )
+            except asyncio.CancelledError:
+                self._closed = True
+                raise RuntimeError(
+                    "StreamChannel queue cancelled (consumer likely exited)"
+                )
 
     def close(self) -> None:
         """Signal end-of-stream (called from producer when done)."""
