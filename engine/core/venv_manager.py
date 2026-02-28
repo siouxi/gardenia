@@ -133,12 +133,25 @@ class VenvManager:
             venv_dir = self._workers_dir / key
             python_path = venv_dir / "bin" / "python"
             deps_manifest = self._workers_dir / f"{key}.deps"
+            # Sentinel file written ONLY after a fully-successful install.
+            # If it's absent, the venv is corrupt (previous crash/kill mid-pip).
+            sentinel = venv_dir / ".gardenia_complete"
 
-            # Disk cache hit — venv already exists
-            if python_path.exists():
+            # Disk cache hit — venv already exists AND install was complete
+            if python_path.exists() and sentinel.exists():
                 log.info(f"VenvManager: cache hit for {key} ({len(deps)} deps)")
                 self._cache[key] = python_path
                 return python_path
+
+            # If python exists but sentinel is missing → previous install was incomplete
+            if python_path.exists() and not sentinel.exists():
+                log.warning(
+                    f"VenvManager: corrupt venv detected for {key} "
+                    f"(python exists but .gardenia_complete sentinel missing). "
+                    f"Deleting and rebuilding."
+                )
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                deps_manifest.unlink(missing_ok=True)
 
             # Create new micro-venv
             log.info(f"VenvManager: creating venv {key} for deps: {deps}")
@@ -188,6 +201,11 @@ class VenvManager:
                     "deps": sorted(deps),
                     "python": str(python_path),
                 }, indent=2))
+
+                # 5. Write sentinel — this is the integrity marker.
+                #    Only exists when all deps were successfully installed.
+                #    If this file is absent, the venv is considered corrupt.
+                sentinel.write_text("ok")
 
                 log.info(f"VenvManager: venv {key} ready at {venv_dir}")
                 self._cache[key] = python_path

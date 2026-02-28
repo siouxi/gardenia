@@ -728,6 +728,9 @@ class WorkerManager:
         # Execution state
         exec_state = {"error": None, "chunks": 0, "total_rows": 0}
 
+        # Shared stop signal — set when we give up waiting for the thread
+        stop_event = threading.Event()
+
         def run_generator():
             channel = None
             try:
@@ -738,38 +741,49 @@ class WorkerManager:
                     channel = registry_stream.get_or_create_channel(node_id)
                     if loop:
                         channel.set_loop(loop)
-                        
+
                     if downstream_nodes:
                         for dst in downstream_nodes:
                             try:
                                 channel.subscribe(dst)
                             except Exception:
                                 pass
-                    
+
                     for chunk in gen:
+                        # ── Cooperative kill-switch ──────────────────────────
+                        # If the orchestrator gave up waiting (timeout), exit
+                        # the generator so this thread can die cleanly.
+                        if stop_event.is_set():
+                            log.warning(
+                                f"Stream: {node_id} generator interrupted by stop_event"
+                            )
+                            break
+                        # ─────────────────────────────────────────────────────
+
                         if chunk is None:
                             continue
                         try:
-                            # Write batch blocking (pushes to async queue from this thread)
                             channel.write_batch(chunk)
-                            
                             exec_state["chunks"] += 1
                             try:
                                 num_rows = len(chunk)
-                            except:
+                            except Exception:
                                 num_rows = 0
                             exec_state["total_rows"] += num_rows
-
                             log.info(
                                 f"Stream: {node_id} yielded chunk "
-                                f"#{exec_state['chunks']} "
-                                f"({num_rows} rows)"
+                                f"#{exec_state['chunks']} ({num_rows} rows)"
                             )
                         except Exception as e:
-                            log.warning(f"Stream: failed to convert chunk: {e}\n{traceback.format_exc()}")
-                            exec_state["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+                            log.warning(
+                                f"Stream: failed to convert chunk: {e}\n"
+                                f"{traceback.format_exc()}"
+                            )
+                            exec_state["error"] = (
+                                f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+                            )
                             break
-                            
+
             except Exception as e:
                 exec_state["error"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
             finally:
@@ -782,6 +796,15 @@ class WorkerManager:
         thread.join(timeout=timeout)
 
         if thread.is_alive():
+            # Signal the generator to stop after the next chunk, then give it
+            # a short grace period to clean up (close channel etc.) before
+            # we return. The thread is daemon=True so it won't prevent shutdown.
+            stop_event.set()
+            thread.join(timeout=5)  # brief grace period for cleanup
+            log.warning(
+                f"Stream: {node_id} timed out after {timeout}s — "
+                f"stop_event sent (thread {'stopped' if not thread.is_alive() else 'still running'})"
+            )
             return ExecutionResult(
                 status="timeout",
                 output=stdout_capture.getvalue(),
