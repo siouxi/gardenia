@@ -656,8 +656,9 @@ app.on('ready', () => {
         return new Promise((resolve) => {
             // R script to list installed packages as JSON
             const rScript = `
-                installed <- installed.packages()[,c("Package", "Version")]
-                json <- jsonlite::toJSON(as.data.frame(installed), auto_unbox=TRUE)
+                df <- as.data.frame(installed.packages()[,c("Package", "Version")], stringsAsFactors=FALSE)
+                df <- df[!duplicated(df$Package), ]
+                json <- jsonlite::toJSON(df, auto_unbox=TRUE)
                 cat(json)
             `;
             const proc = spawn(activeRPath, ['-e', rScript]);
@@ -674,10 +675,16 @@ app.on('ready', () => {
         });
     });
 
-    ipcMain.handle('package:install-r', async (event, name) => {
+    ipcMain.handle('package:install-r', async (event, name, isBioc = false) => {
         return new Promise((resolve) => {
-            // Choose a CRAN mirror
-            const rScript = `install.packages('${name}', repos='http://cran.rstudio.com')`;
+            let rScript = '';
+            if (isBioc) {
+                // If BiocManager is not installed, install it first, then install the package. As requested by user.
+                rScript = `if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager', repos='http://cran.rstudio.com'); BiocManager::install('${name}', ask=FALSE)`;
+            } else {
+                // Choose a CRAN mirror
+                rScript = `install.packages('${name}', repos='http://cran.rstudio.com')`;
+            }
             const proc = spawn(activeRPath, ['-e', rScript]);
             let output = '';
             proc.stdout.on('data', d => output += d);

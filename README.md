@@ -127,6 +127,10 @@ Before starting, ensure you have the following software installed:
    ```R
    install.packages("jsonlite")
    ```
+   > **Note for Bioconductor Users (Linux)**: If you plan to install complex Bioconductor packages (like `GEOquery`) via the Gardenia Package Manager, R will attempt to compile their C++ dependencies from scratch, which can take a very long time. It is highly recommended to install the pre-compiled system binaries first:
+   > ```bash
+   > sudo apt-get install r-cran-dplyr r-cran-tidyr r-cran-readr r-cran-httr r-cran-curl r-cran-openssl r-cran-rvest
+   > ```
 
 ---
 

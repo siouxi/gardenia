@@ -27,6 +27,7 @@ export const PackageManager: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<string>('');
     const [consoleOutput, setConsoleOutput] = useState<string>('');
+    const [isBioc, setIsBioc] = useState<boolean>(false);
 
     const fetchEnvs = async () => {
         try {
@@ -117,7 +118,7 @@ export const PackageManager: React.FC = () => {
             if (activeTab === 'python') {
                 result = await (window as any).electronAPI.installPythonPackage(installName);
             } else {
-                result = await (window as any).electronAPI.installRPackage(installName);
+                result = await (window as any).electronAPI.installRPackage(installName, isBioc);
             }
 
             setConsoleOutput(result.output || '');
@@ -166,9 +167,10 @@ export const PackageManager: React.FC = () => {
         }
     };
 
-    const filteredPackages = packages.filter(p =>
-        p.Package.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredPackages = packages.filter(p => {
+        const pkgName = p.Package || p.name || '';
+        return pkgName.toLowerCase().includes(searchQuery.toLowerCase());
+    });
 
     return (
         <div className="flex flex-col h-full bg-[#1e1e1e] text-[#ccc] rounded-md overflow-hidden">
@@ -280,10 +282,10 @@ export const PackageManager: React.FC = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredPackages.map((pkg) => (
-                                        <tr key={pkg.Package} className="border-b border-[#2a2a2a] hover:bg-[#2a2d2e] group">
-                                            <td className="p-2 font-medium text-[#ddd]">{pkg.Package}</td>
-                                            <td className="p-2 text-[#888] font-mono">{pkg.Version}</td>
+                                    filteredPackages.map((pkg, idx) => (
+                                        <tr key={`${pkg.Package || pkg.name}-${pkg.Version || pkg.version}-${idx}`} className="border-b border-[#2a2a2a] hover:bg-[#2a2d2e] group">
+                                            <td className="p-2 font-medium text-[#ddd]">{pkg.Package || pkg.name}</td>
+                                            <td className="p-2 text-[#888] font-mono">{pkg.Version || pkg.version}</td>
                                             <td className="p-2 text-right">
                                                 <button
                                                     onClick={() => handleUninstall(pkg.Package)}
@@ -323,8 +325,19 @@ export const PackageManager: React.FC = () => {
                                 <Send size={14} />
                             </button>
                         </div>
+                        {activeTab === 'r' && (
+                            <label className="flex items-center gap-2 text-[10px] text-[#888] mb-2 cursor-pointer hover:text-[#ccc] transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={isBioc}
+                                    onChange={(e) => setIsBioc(e.target.checked)}
+                                    className="accent-[#007fd4] bg-[#111] border-[#333]"
+                                />
+                                Use BiocManager (Bioconductor)
+                            </label>
+                        )}
                         <p className="text-[10px] text-[#666]">
-                            Installing via {activeTab === 'python' ? 'conda install' : 'install.packages()'}
+                            Installing via {activeTab === 'python' ? 'conda install' : isBioc ? 'BiocManager::install()' : 'install.packages()'}
                         </p>
                     </div>
 

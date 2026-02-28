@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uninstallPythonPackage: (name: string) => ipcRenderer.invoke('package:uninstall-python', name),
 
     listRPackages: () => ipcRenderer.invoke('package:list-r'),
-    installRPackage: (name: string) => ipcRenderer.invoke('package:install-r', name),
+    installRPackage: (name: string, isBioc: boolean = false) => ipcRenderer.invoke('package:install-r', name, isBioc),
     uninstallRPackage: (name: string) => ipcRenderer.invoke('package:uninstall-r', name),
 
     // Environment API
