@@ -13,7 +13,7 @@ export default new NodeBuilder('blast-search', 'BLAST Search')
 from Bio.Blast.Applications import NcbiblastnCommandline, NcbiblastpCommandline
 from Bio.Blast import NCBIXML
 from Bio import SeqIO
-import pandas as pd
+
 import tempfile, os
 
 program = params.get('program', 'blastn')

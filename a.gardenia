@@ -1,0 +1,205 @@
+{
+  "nodes": [
+    {
+      "id": "flow-start-1772242897557",
+      "type": "resolve",
+      "position": {
+        "x": -16.361351899295414,
+        "y": 492.6702758108989
+      },
+      "data": {
+        "label": "START",
+        "category": "Utilities",
+        "toolId": "flow-start",
+        "toolData": {
+          "id": "flow-start",
+          "name": "START",
+          "description": "Marks the beginning of a workflow",
+          "category": "Utilities",
+          "version": "1.0.0",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "start_signal",
+              "type": "signal"
+            }
+          ],
+          "parameters": [],
+          "libraries": []
+        },
+        "parameterValues": {},
+        "code": "# Hola Mundo",
+        "language": "python"
+      },
+      "measured": {
+        "width": 180,
+        "height": 95
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "csv-input-1772244852385",
+      "type": "resolve",
+      "position": {
+        "x": 338.5569235247186,
+        "y": 330.0849669960522
+      },
+      "data": {
+        "label": "CSV Input",
+        "category": "Input/Output",
+        "toolId": "csv-input",
+        "toolData": {
+          "id": "csv-input",
+          "name": "CSV Input",
+          "description": "Load a CSV file from the local file system using Pandas",
+          "category": "Input/Output",
+          "version": "1.0.0",
+          "inputs": [
+            {
+              "name": "trigger",
+              "type": "signal",
+              "description": "Trigger to execute this node"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "data",
+              "type": "dataset",
+              "description": "Loaded DataFrame"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "path",
+              "type": "file",
+              "label": "CSV File",
+              "required": true
+            },
+            {
+              "name": "variable_name",
+              "type": "string",
+              "label": "Dataset Name",
+              "default": "data",
+              "required": true
+            },
+            {
+              "name": "sep",
+              "type": "string",
+              "label": "Separator",
+              "default": ",",
+              "required": false
+            },
+            {
+              "name": "header",
+              "type": "boolean",
+              "label": "Has Header",
+              "default": true,
+              "required": false
+            }
+          ],
+          "defaultCode": "# CSV Input Node\nimport pandas as pd\nimport os\n\npath = params.get('path', '')\nvar_name = params.get('variable_name', 'data')\nsep = params.get('sep', ',')\nhas_header = 0 if params.get('header', True) else None\n\nif path and os.path.exists(path):\n    print(f\"Loading CSV from: {path} into '{var_name}'\")\n    try:\n        _df = pd.read_csv(path, sep=sep, header=has_header)\n        print(f\"Loaded {len(_df)} rows and {len(_df.columns)} columns\")\n        print(_df.head())\n        \n        # Assign to dynamic variable name\n        globals()[var_name] = _df\n        \n    except Exception as e:\n        print(f\"Error loading CSV: {e}\")\n        raise e\nelse:\n    print(\"Error: Invalid file path or file not found\")\n    raise FileNotFoundError(f\"File not found: {path}\")\n",
+          "language": "python",
+          "libraries": [
+            "pandas"
+          ]
+        },
+        "parameterValues": {
+          "path": "/home/nicolas/Descargas/archive/medicine_dataset.csv"
+        },
+        "code": "# CSV Input Node\nimport pandas as pd\nimport os\n\npath = params.get('path', '')\nvar_name = params.get('variable_name', 'data')\nsep = params.get('sep', ',')\nhas_header = 0 if params.get('header', True) else None\n\nif path and os.path.exists(path):\n    print(f\"Loading CSV from: {path} into '{var_name}'\")\n    try:\n        _df = pd.read_csv(path, sep=sep, header=has_header)\n        print(f\"Loaded {len(_df)} rows and {len(_df.columns)} columns\")\n        print(_df.head())\n        \n        # Assign to dynamic variable name\n        globals()[var_name] = _df\n        \n    except Exception as e:\n        print(f\"Error loading CSV: {e}\")\n        raise e\nelse:\n    print(\"Error: Invalid file path or file not found\")\n    raise FileNotFoundError(f\"File not found: {path}\")\n",
+        "language": "python"
+      },
+      "measured": {
+        "width": 356,
+        "height": 321
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "select-columns-1772244867099",
+      "type": "resolve",
+      "position": {
+        "x": 772.4708239857727,
+        "y": 384.7893490980467
+      },
+      "data": {
+        "label": "Select Columns",
+        "category": "Data Wrangling",
+        "toolId": "select-columns",
+        "toolData": {
+          "id": "select-columns",
+          "name": "Select Columns",
+          "description": "Select or drop columns from a DataFrame",
+          "category": "Data Wrangling",
+          "version": "1.0.0",
+          "inputs": [
+            {
+              "name": "data",
+              "type": "dataset",
+              "description": "Input dataset"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dataset",
+              "description": "Result dataset"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "columns",
+              "label": "Columns",
+              "type": "string",
+              "default": "",
+              "description": "Comma-separated column names to keep"
+            },
+            {
+              "name": "drop_mode",
+              "label": "Drop Instead of Keep",
+              "type": "toggle",
+              "default": false,
+              "description": "If enabled, drops the listed columns instead"
+            }
+          ],
+          "language": "python",
+          "libraries": [
+            "pandas"
+          ],
+          "defaultCode": "# Select Columns Node\nimport pandas as pd\n\ncols = [c.strip() for c in params.get('columns', '').split(',') if c.strip()]\ndrop_mode = params.get('drop_mode', False)\n\n# \ud83d\udee1\ufe0f ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)\ndef process_chunk(data: pd.DataFrame) -> pd.DataFrame:\n    if cols:\n        if drop_mode:\n            result = data.drop(columns=[c for c in cols if c in data.columns])\n            print(f\"Dropped {len(cols)} columns \u2192 {len(result.columns)} remaining\")\n        else:\n            valid = [c for c in cols if c in data.columns]\n            result = data[valid]\n            print(f\"Selected {len(valid)} columns\")\n    else:\n        result = data\n        print(\"No columns specified, passing through all data\")\n    return result\n\n# 1. STREAMING MODE SUPPORT\nif 'stream_input' in globals() and hasattr(stream_input('data'), '__iter__'):\n    stream = stream_input('data')\n    for chunk in stream:\n        yield process_chunk(chunk)\n\n# 2. ZERO-COPY FULL MEMORY MODE SUPPORT\nelif 'data' in globals() and isinstance(globals()['data'], pd.DataFrame):\n    globals()['result'] = process_chunk(globals()['data'])\n    print(\"Zero-Copy block processed successfully.\")\nelse:\n    raise ValueError(\"Connect a dataset (Zero-Copy) or stream (Streaming) to the input.\")\n"
+        },
+        "parameterValues": {
+          "drop_mode": false,
+          "columns": "Category"
+        },
+        "code": "# Select Columns Node\nimport pandas as pd\n\ncols = [c.strip() for c in params.get('columns', '').split(',') if c.strip()]\ndrop_mode = params.get('drop_mode', False)\n\nif 'data' in dir() and isinstance(data, pd.DataFrame):\n    if cols:\n        if drop_mode:\n            result = data.drop(columns=[c for c in cols if c in data.columns])\n            print(f\"Dropped {len(cols)} columns \u2192 {len(result.columns)} remaining\")\n        else:\n            valid = [c for c in cols if c in data.columns]\n            result = data[valid]\n            print(f\"Selected {len(valid)} columns\")\n    else:\n        result = data\n        print(\"No columns specified, passing through all data\")\n\n\n",
+        "language": "python"
+      },
+      "measured": {
+        "width": 189,
+        "height": 209
+      },
+      "selected": true,
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "flow-start-1772242897557",
+      "sourceHandle": "start_signal",
+      "target": "csv-input-1772244852385",
+      "targetHandle": "trigger",
+      "id": "xy-edge__flow-start-1772242897557start_signal-csv-input-1772244852385trigger"
+    },
+    {
+      "source": "csv-input-1772244852385",
+      "sourceHandle": "data",
+      "target": "select-columns-1772244867099",
+      "targetHandle": "data",
+      "id": "xy-edge__csv-input-1772244852385data-select-columns-1772244867099data"
+    }
+  ],
+  "version": "1.0.0"
+}

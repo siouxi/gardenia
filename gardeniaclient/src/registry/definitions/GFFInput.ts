@@ -7,7 +7,7 @@ export default new NodeBuilder('gff-input', 'GFF/GTF Input')
     .addString('variable_name', 'Variable Name', 'annotations')
     .withResultOutput()
     .setPythonCode(`# GFF/GTF Input Node
-import pandas as pd
+
 import os
 
 path = params.get('path', '')

@@ -10,7 +10,7 @@ export default new NodeBuilder('train-model', 'Train Model')
     .addSelect('task', 'Task', ['classification', 'regression'], 'classification')
     .addSlider('test_size', 'Test Split %', 10, 50, 20, 5)
     .setPythonCode(`# Train Model Node
-import pandas as pd
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 

@@ -12,7 +12,7 @@ from Bio.Phylo.TreeConstruction import DistanceCalculator, DistanceTreeConstruct
 from Bio.Align import MultipleSeqAlignment
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
-import pandas as pd
+
 
 if 'sequences' in dir() and sequences and len(sequences) >= 3:
     # Pad sequences to same length for alignment

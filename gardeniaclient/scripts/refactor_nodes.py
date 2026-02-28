@@ -66,7 +66,7 @@ if 'stream_input' in globals() and hasattr(stream_input('data'), '__iter__'):
 
 # 2. ZERO-COPY FULL MEMORY MODE SUPPORT
 elif 'data' in globals() and isinstance(globals()['data'], pd.DataFrame):
-    result = process_chunk(globals()['data'])
+    globals()['result'] = process_chunk(globals()['data'])
     print("Zero-Copy block processed successfully.")
 else:
     raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
@@ -106,7 +106,7 @@ if 'stream_input' in globals() and hasattr(stream_input('data'), '__iter__'):
 
 # 2. ZERO-COPY FULL MEMORY MODE SUPPORT
 elif 'data' in globals() and isinstance(globals()['data'], pd.DataFrame):
-    result = process_chunk(globals()['data'])
+    globals()['result'] = process_chunk(globals()['data'])
     print("Zero-Copy block processed successfully.")
 else:
     raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")"""

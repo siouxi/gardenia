@@ -11,7 +11,7 @@ export default new NodeBuilder('foreach', 'ForEach')
     .setPythonCode(`# ForEach / Loop Node
 # Splits data and processes each part sequentially
 # The result is the concatenation of all iterations
-import pandas as pd
+
 
 iterate_by = params.get('iterate_by', 'rows')
 group_col = params.get('group_column', '')

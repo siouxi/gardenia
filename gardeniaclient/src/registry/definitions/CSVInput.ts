@@ -42,7 +42,7 @@ const tool: ToolDefinition = {
         }
     ],
     defaultCode: `# CSV Input Node
-import pandas as pd
+
 import os
 
 path = params.get('path', '')

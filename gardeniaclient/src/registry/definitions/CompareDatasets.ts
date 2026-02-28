@@ -9,7 +9,7 @@ export default new NodeBuilder('compare-datasets', 'Compare Datasets')
     .addString('key_column', 'Key Column', '', 'Column to compare on (leave empty for index)')
     .addSelect('comparison_type', 'Comparison Type', ['rows', 'columns', 'values'], 'rows')
     .setPythonCode(`# Compare Datasets Node
-import pandas as pd
+
 
 key_col = params.get('key_column', '')
 comp_type = params.get('comparison_type', 'rows')

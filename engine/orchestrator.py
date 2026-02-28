@@ -72,6 +72,7 @@ class Orchestrator:
                 timeout=data.get("timeout", 60),
                 memory_limit=data.get("memoryLimit", 512),
                 dependencies=data.get("dependencies", []),
+                outputs=data.get("toolData", {}).get("outputs", []),
             )
             nodes.append(node)
         
@@ -210,6 +211,7 @@ class Orchestrator:
                 dependencies=node.dependencies,
                 upstream_nodes=upstream_nodes,
                 downstream_nodes=downstream_nodes,
+                outputs=node.outputs,
             )
 
             # Auto-save datasets to storage

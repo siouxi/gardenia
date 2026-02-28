@@ -10,7 +10,7 @@ export default new NodeBuilder('venn-diagram', 'Venn Diagram')
     .addString('label_a', 'Label A', 'Set A', 'Label for first set')
     .addString('label_b', 'Label B', 'Set B', 'Label for second set')
     .setPythonCode(`# Venn Diagram Node
-import pandas as pd
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt

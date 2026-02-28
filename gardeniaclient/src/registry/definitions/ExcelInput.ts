@@ -35,7 +35,7 @@ const tool: ToolDefinition = {
         }
     ],
     defaultCode: `# Excel Input Node
-import pandas as pd
+
 import os
 
 path = params.get('path', '')

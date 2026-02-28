@@ -9,7 +9,7 @@ export default new NodeBuilder('conditional', 'Conditional')
     .addString('condition', 'Condition', 'len(data) > 1000', 'Python expression that evaluates to True or False')
     .setPythonCode(`# Conditional Branch Node
 # The condition is evaluated and data is routed to true_out or false_out
-import pandas as pd
+
 
 condition_expr = params.get('condition', 'True')
 

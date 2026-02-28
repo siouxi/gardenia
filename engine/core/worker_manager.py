@@ -625,6 +625,7 @@ class WorkerManager:
         dependencies: Optional[list] = None,
         upstream_nodes: Optional[list] = None,
         downstream_nodes: Optional[list] = None,
+        outputs: Optional[List[Dict[str, Any]]] = None,
     ) -> ExecutionResult:
         """
         Execute code in the appropriate worker.
@@ -647,7 +648,7 @@ class WorkerManager:
                 self._execute_streaming,
                 code, node_id, parameters,
                 timeout, memory_limit_mb,
-                upstream_nodes, downstream_nodes,
+                upstream_nodes, downstream_nodes, outputs,
                 loop=loop,
             )
         elif language == "python":
@@ -679,6 +680,7 @@ class WorkerManager:
         memory_limit_mb: int = 512,
         upstream_nodes: Optional[list] = None,
         downstream_nodes: Optional[list] = None,
+        outputs: Optional[List[Dict[str, Any]]] = None,
         loop: Optional[Any] = None,
     ) -> ExecutionResult:
         """
@@ -738,7 +740,17 @@ class WorkerManager:
                     exec(wrapped_code, namespace)
                     gen = namespace['__gardenia_generator__']()
 
-                    channel = registry_stream.get_or_create_channel(node_id)
+                    # Determine output variable name (default to 'data')
+                    var_name = "data"
+                    if outputs:
+                        for out in outputs:
+                            if out.get("type") == "dataset":
+                                var_name = out.get("name", "data")
+                                break
+                        else:
+                            var_name = outputs[0].get("name", "data")
+
+                    channel = registry_stream.get_or_create_channel(node_id, var_name=var_name)
                     if loop:
                         channel.set_loop(loop)
 
@@ -829,10 +841,38 @@ class WorkerManager:
             exclude=initial_keys | {'__gardenia_generator__'},
         )
 
+        # Default streaming variable name for UI registration
+        var_name = "data"
+        if outputs:
+            for out in outputs:
+                if out.get("type") == "dataset":
+                    var_name = out.get("name", "data")
+                    break
+            else:
+                var_name = outputs[0].get("name", "data")
+                
+        # Register a placeholder value in the variable registry for UI previews and state 
+        # so downstream nodes know this variable was correctly produced
+        if var_name not in new_keys:
+            self._python_worker.registry.set(
+                name=var_name,
+                value=None,
+                scope=VariableScope.WORKFLOW,
+                node_id=node_id,
+                type_hint="DataFrame",
+                is_dataframe=True,
+                plasma_key=None,
+                preview=f"⟨ Stream of {exec_state['chunks']} chunks, {exec_state['total_rows']:,} rows ⟩"
+            )
+            if not new_keys:
+                new_keys = set()
+            new_keys.add(var_name)
+
         return ExecutionResult(
             status="streaming",
             output=stdout_capture.getvalue(),
             variables_created=new_keys if new_keys else None,
+            error_data=None, # Add error_data internally needed by execution_result
         )
 
     def _execute_in_venv(
@@ -1001,7 +1041,7 @@ def _inject_stream_input(namespace: Dict[str, Any], node_id: str, upstream_nodes
         channels = registry.get_channels_for_consumer(node_id)
         matching_channels = []
         for ch in channels:
-            if ch.var_name == var_name:
+            if ch.var_name == var_name and ch.source_node != node_id:
                 if upstream_nodes is not None and ch.source_node not in upstream_nodes:
                     continue
                 matching_channels.append(ch)

@@ -24,7 +24,7 @@ print(f"Threshold Set: {params.get('threshold')}")
 print(f"Normalization enabled: {params.get('normalize')}")
 
 # Create dummy output data
-import pandas as pd
+
 result = pd.DataFrame({"dummy": [1, 2, 3]})
 print("Dummy dataset created.")
 `)

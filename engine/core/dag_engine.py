@@ -50,6 +50,7 @@ class DAGNode:
     timeout: int = 60  # Execution timeout in seconds
     memory_limit: int = 512  # Memory limit in MB (Python only)
     dependencies: List[str] = field(default_factory=list)  # Per-node pip deps
+    outputs: List[Dict[str, Any]] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -65,6 +66,7 @@ class DAGNode:
             "timeout": self.timeout,
             "memory_limit": self.memory_limit,
             "dependencies": self.dependencies,
+            "outputs": self.outputs,
         }
 
 

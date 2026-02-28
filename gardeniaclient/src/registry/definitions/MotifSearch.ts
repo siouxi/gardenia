@@ -9,7 +9,7 @@ export default new NodeBuilder('motif-search', 'Motif Search')
     .setPythonCode(`# Motif Search Node
 from Bio import motifs, SeqIO
 from Bio.Seq import Seq
-import pandas as pd
+
 import re
 
 motif_str = params.get('motif', 'TATAAA')

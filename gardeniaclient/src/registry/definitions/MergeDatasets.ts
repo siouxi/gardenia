@@ -9,7 +9,7 @@ export default new NodeBuilder('merge-datasets', 'Merge Datasets')
     .addString('on', 'Join Column', '', 'Column name to join on')
     .addSelect('how', 'Join Type', ['inner', 'left', 'right', 'outer'], 'inner')
     .setPythonCode(`# Merge Datasets Node
-import pandas as pd
+
 
 on_col = params.get('on', '')
 how = params.get('how', 'inner')

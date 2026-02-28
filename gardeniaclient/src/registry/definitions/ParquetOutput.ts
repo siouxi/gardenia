@@ -29,7 +29,7 @@ const tool: ToolDefinition = {
         }
     ],
     defaultCode: `# Parquet Output Node
-import pandas as pd
+
 import os
 
 path = params.get('path', '')

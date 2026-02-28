@@ -8,7 +8,7 @@ export default new NodeBuilder('test-builder', 'Test Builder Node')
     .addSlider('multiplier', 'Multiplier', 1, 10, 2, 0.5, 'Multiplies the input data')
     .addToggle('filter_positives', 'Filter Positives', false, 'Keep only positive values')
     .setPythonCode(`
-import pandas as pd
+
 
 # Access input data via generic 'inputs' dictionary
 # This proves we don't need to know the variable name 'data' specifically, 

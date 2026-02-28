@@ -1,3 +1,253 @@
 {
-  "datasets": []
+  "datasets": [
+    {
+      "name": "_df",
+      "path": "/home/nicolas/Documentos/gardenia/gardeniaclient/.gardenia_data/_df.parquet",
+      "num_rows": 50000,
+      "num_columns": 7,
+      "columns": [
+        {
+          "name": "Name",
+          "type": "large_string"
+        },
+        {
+          "name": "Category",
+          "type": "large_string"
+        },
+        {
+          "name": "Dosage Form",
+          "type": "large_string"
+        },
+        {
+          "name": "Strength",
+          "type": "large_string"
+        },
+        {
+          "name": "Manufacturer",
+          "type": "large_string"
+        },
+        {
+          "name": "Indication",
+          "type": "large_string"
+        },
+        {
+          "name": "Classification",
+          "type": "large_string"
+        }
+      ],
+      "size_bytes": 205300,
+      "created_at": "2026-02-27T22:01:25.662106",
+      "source_node_id": "csv-input-1772244852385",
+      "preview": [
+        {
+          "Name": "Acetocillin",
+          "Category": "Antidiabetic",
+          "Dosage Form": "Cream",
+          "Strength": "938 mg",
+          "Manufacturer": "Roche Holding AG",
+          "Indication": "Virus",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Ibuprocillin",
+          "Category": "Antiviral",
+          "Dosage Form": "Injection",
+          "Strength": "337 mg",
+          "Manufacturer": "CSL Limited",
+          "Indication": "Infection",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Dextrophen",
+          "Category": "Antibiotic",
+          "Dosage Form": "Ointment",
+          "Strength": "333 mg",
+          "Manufacturer": "Johnson & Johnson",
+          "Indication": "Wound",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Clarinazole",
+          "Category": "Antifungal",
+          "Dosage Form": "Syrup",
+          "Strength": "362 mg",
+          "Manufacturer": "AbbVie Inc.",
+          "Indication": "Pain",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Amoxicillin",
+          "Category": "Antifungal",
+          "Dosage Form": "Tablet",
+          "Strength": "802 mg",
+          "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
+          "Indication": "Wound",
+          "Classification": "Over-the-Counter"
+        }
+      ]
+    },
+    {
+      "name": "data",
+      "path": "/home/nicolas/Documentos/gardenia/gardeniaclient/.gardenia_data/data.parquet",
+      "num_rows": 50000,
+      "num_columns": 7,
+      "columns": [
+        {
+          "name": "Name",
+          "type": "large_string"
+        },
+        {
+          "name": "Category",
+          "type": "large_string"
+        },
+        {
+          "name": "Dosage Form",
+          "type": "large_string"
+        },
+        {
+          "name": "Strength",
+          "type": "large_string"
+        },
+        {
+          "name": "Manufacturer",
+          "type": "large_string"
+        },
+        {
+          "name": "Indication",
+          "type": "large_string"
+        },
+        {
+          "name": "Classification",
+          "type": "large_string"
+        }
+      ],
+      "size_bytes": 205300,
+      "created_at": "2026-02-27T22:01:25.630907",
+      "source_node_id": "csv-input-1772244852385",
+      "preview": [
+        {
+          "Name": "Acetocillin",
+          "Category": "Antidiabetic",
+          "Dosage Form": "Cream",
+          "Strength": "938 mg",
+          "Manufacturer": "Roche Holding AG",
+          "Indication": "Virus",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Ibuprocillin",
+          "Category": "Antiviral",
+          "Dosage Form": "Injection",
+          "Strength": "337 mg",
+          "Manufacturer": "CSL Limited",
+          "Indication": "Infection",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Dextrophen",
+          "Category": "Antibiotic",
+          "Dosage Form": "Ointment",
+          "Strength": "333 mg",
+          "Manufacturer": "Johnson & Johnson",
+          "Indication": "Wound",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Clarinazole",
+          "Category": "Antifungal",
+          "Dosage Form": "Syrup",
+          "Strength": "362 mg",
+          "Manufacturer": "AbbVie Inc.",
+          "Indication": "Pain",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Amoxicillin",
+          "Category": "Antifungal",
+          "Dosage Form": "Tablet",
+          "Strength": "802 mg",
+          "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
+          "Indication": "Wound",
+          "Classification": "Over-the-Counter"
+        }
+      ]
+    },
+    {
+      "name": "result",
+      "path": "/home/nicolas/Documentos/gardenia/gardeniaclient/.gardenia_data/result.parquet",
+      "num_rows": 50000,
+      "num_columns": 6,
+      "columns": [
+        {
+          "name": "Name",
+          "type": "large_string"
+        },
+        {
+          "name": "Dosage Form",
+          "type": "large_string"
+        },
+        {
+          "name": "Strength",
+          "type": "large_string"
+        },
+        {
+          "name": "Manufacturer",
+          "type": "large_string"
+        },
+        {
+          "name": "Indication",
+          "type": "large_string"
+        },
+        {
+          "name": "Classification",
+          "type": "large_string"
+        }
+      ],
+      "size_bytes": 185696,
+      "created_at": "2026-02-27T22:01:25.717747",
+      "source_node_id": "select-columns-1772244867099",
+      "preview": [
+        {
+          "Name": "Acetocillin",
+          "Dosage Form": "Cream",
+          "Strength": "938 mg",
+          "Manufacturer": "Roche Holding AG",
+          "Indication": "Virus",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Ibuprocillin",
+          "Dosage Form": "Injection",
+          "Strength": "337 mg",
+          "Manufacturer": "CSL Limited",
+          "Indication": "Infection",
+          "Classification": "Over-the-Counter"
+        },
+        {
+          "Name": "Dextrophen",
+          "Dosage Form": "Ointment",
+          "Strength": "333 mg",
+          "Manufacturer": "Johnson & Johnson",
+          "Indication": "Wound",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Clarinazole",
+          "Dosage Form": "Syrup",
+          "Strength": "362 mg",
+          "Manufacturer": "AbbVie Inc.",
+          "Indication": "Pain",
+          "Classification": "Prescription"
+        },
+        {
+          "Name": "Amoxicillin",
+          "Dosage Form": "Tablet",
+          "Strength": "802 mg",
+          "Manufacturer": "Teva Pharmaceutical Industries Ltd.",
+          "Indication": "Wound",
+          "Classification": "Over-the-Counter"
+        }
+      ]
+    }
+  ]
 }

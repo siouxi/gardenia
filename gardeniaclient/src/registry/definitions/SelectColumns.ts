@@ -8,55 +8,23 @@ export default new NodeBuilder('select-columns', 'Select Columns')
     .addString('columns', 'Columns', '', 'Comma-separated column names to keep')
     .addToggle('drop_mode', 'Drop Instead of Keep', false, 'If enabled, drops the listed columns instead')
     .setPythonCode(`# Select Columns Node
-import pandas as pd
+
 
 cols = [c.strip() for c in params.get('columns', '').split(',') if c.strip()]
 drop_mode = params.get('drop_mode', False)
 
-# 🛡️ ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)
-import pandas as pd
-
-def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
-    if cols:
-        if drop_mode:
-            result = data.drop(columns=[c for c in cols if c in data.columns])
-            print(f"Dropped {len(cols)} columns → {len(result.columns)} remaining")
-        else:
-            valid = [c for c in cols if c in data.columns]
-            result = data[valid]
-            print(f"Selected {len(valid)} columns")
+if 'data' in dir() and isinstance(data, pd.DataFrame):
+if cols:
+    if drop_mode:
+        result = data.drop(columns=[c for c in cols if c in data.columns])
+        print(f"Dropped {len(cols)} columns → {len(result.columns)} remaining")
     else:
-        result = data
-        print("No columns specified, passing through all data")
-    print(result.head())
-    return result if 'result' in locals() else data
-
-# 1. STREAMING MODE SUPPORT
-if 'stream_input' in dir() and hasattr(stream_input('data'), '__iter__'):
-    stream = stream_input('data')
-    for chunk in stream:
-        yield process_chunk(chunk)
-
-# 2. ZERO-COPY FULL MEMORY MODE SUPPORT
-el# 🛡️ ARCHITECTURE COMPLIANT NODE (Zero-Copy & Streaming)
-import pandas as pd
-
-def process_chunk(data: pd.DataFrame) -> pd.DataFrame:
-    result = process_chunk(data)
-    print("Zero-Copy block processed successfully.")
-    return result if 'result' in locals() else data
-
-# 1. STREAMING MODE SUPPORT
-if 'stream_input' in globals() and hasattr(stream_input('data'), '__iter__'):
-    stream = stream_input('data')
-    for chunk in stream:
-        yield process_chunk(chunk)
-
-# 2. ZERO-COPY FULL MEMORY MODE SUPPORT
-elif 'data' in globals() and isinstance(globals()['data'], pd.DataFrame):
-    result = process_chunk(globals()['data'])
-    print("Zero-Copy block processed successfully.")
+        valid = [c for c in cols if c in data.columns]
+        result = data[valid]
+        print(f"Selected {len(valid)} columns")
 else:
-    raise ValueError("Connect a dataset (Zero-Copy) or stream (Streaming) to the input.")
+    result = data
+    print("No columns specified, passing through all data")
+
 `, ['pandas'])
     .build();

@@ -28,7 +28,7 @@ const tool: ToolDefinition = {
         }
     ],
     defaultCode: `# CSV Output Node
-import pandas as pd
+
 import os
 
 path = params.get('path', '')

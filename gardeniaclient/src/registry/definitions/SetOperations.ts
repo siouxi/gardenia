@@ -9,7 +9,7 @@ export default new NodeBuilder('set-operations', 'Set Operations')
     .addSelect('operation', 'Operation', ['intersect', 'union', 'difference', 'symmetric_difference'], 'intersect')
     .addString('key_column', 'Key Column', '', 'Column to use as key (leave empty to compare all columns)')
     .setPythonCode(`# Set Operations Node
-import pandas as pd
+
 
 operation = params.get('operation', 'intersect')
 key_col = params.get('key_column', '')

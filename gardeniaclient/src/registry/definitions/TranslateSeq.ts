@@ -9,7 +9,7 @@ export default new NodeBuilder('translate-seq', 'Translate Sequence')
     .setPythonCode(`# Translate Sequence Node
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-import pandas as pd
+
 
 table = params.get('table', 'Standard')
 

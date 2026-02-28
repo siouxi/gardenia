@@ -9,7 +9,7 @@ export default new NodeBuilder('sequence-alignment', 'Sequence Alignment')
     .setPythonCode(`# Sequence Alignment Node
 from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
-import pandas as pd
+
 
 mode = params.get('mode', 'pairwise')
 
