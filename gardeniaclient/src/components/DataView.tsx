@@ -152,6 +152,7 @@ export const DataView = () => {
     const setDatasets = useWorkflowStore((state) => state.setDatasets);
     const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
     const [clearing, setClearing] = useState(false);
+    const [activeFilter, setActiveFilter] = useState<string>('all');
 
     // Debug logging
     console.log('DataView datasets:', datasets);
@@ -176,6 +177,19 @@ export const DataView = () => {
         }
     };
 
+    // Filter logic
+    const filteredDatasets = datasets.filter((dataset) => {
+        if (activeFilter === 'all') return true;
+        if (activeFilter === 'large') return dataset.size_bytes > 1024 * 1024; // > 1MB
+        if (activeFilter === 'today') {
+            const today = new Date().toDateString();
+            const dsDate = new Date(dataset.created_at).toDateString();
+            return today === dsDate;
+        }
+        if (activeFilter === 'wide') return dataset.num_columns > 10;
+        return true;
+    });
+
     if (datasets.length === 0) {
         return <EmptyState />;
     }
@@ -183,7 +197,7 @@ export const DataView = () => {
     return (
         <div className="flex-1 overflow-auto p-4 bg-[#121212]">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
                 <div>
                     <h2 className="text-lg font-bold text-[#e5e5e5] tracking-tight">
                         My Datasets
@@ -202,19 +216,45 @@ export const DataView = () => {
                         <Trash2 className="w-3.5 h-3.5" />
                         {clearing ? 'Clearing...' : 'Clear All'}
                     </button>
-                    {/* Filter/Sort controls could go here */}
                 </div>
+            </div>
+
+            {/* Quick Filters */}
+            <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
+                {[
+                    { id: 'all', label: 'All Datasets' },
+                    { id: 'today', label: 'Created Today' },
+                    { id: 'large', label: 'Large (>1MB)' },
+                    { id: 'wide', label: 'Wide (>10 cols)' },
+                ].map(filter => (
+                    <button
+                        key={filter.id}
+                        onClick={() => setActiveFilter(filter.id)}
+                        className={`px-3 py-1 text-xs rounded-full border transition-colors whitespace-nowrap ${activeFilter === filter.id
+                                ? 'bg-emerald-900/30 text-emerald-400 border-emerald-900/50'
+                                : 'bg-[#1f1f23] text-[#888] border-[#333] hover:bg-[#2a2a2e] hover:text-[#ccc]'
+                            }`}
+                    >
+                        {filter.label}
+                    </button>
+                ))}
             </div>
 
             {/* Pinterest Grid */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-8">
-                {datasets.map((dataset, index) => (
-                    <DataCard
-                        key={dataset.path || index}
-                        dataset={dataset}
-                        onClick={() => setSelectedDataset(dataset)}
-                    />
-                ))}
+                {filteredDatasets.length > 0 ? (
+                    filteredDatasets.map((dataset, index) => (
+                        <DataCard
+                            key={dataset.path || index}
+                            dataset={dataset}
+                            onClick={() => setSelectedDataset(dataset)}
+                        />
+                    ))
+                ) : (
+                    <div className="col-span-full py-10 text-center text-[#666] text-sm">
+                        No datasets match this filter.
+                    </div>
+                )}
             </div>
 
             {/* Preview Modal */}
