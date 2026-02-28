@@ -54,7 +54,7 @@ class Variable:
         }
     
     def _serialize_value(self) -> Any:
-        """Serialize value for JSON transport"""
+        """Serialize value for JSON transport — never raises."""
         if self.is_dataframe:
             # Return preview metadata instead of dropping huge dataframes into JSON
             if self.preview:
@@ -64,15 +64,22 @@ class Variable:
             if hasattr(self.value, 'shape'):
                 return f"DataFrame {self.value.shape}"
             return "[DataFrame]"
-            
-        # Optimization: Do not serialize if it's already a basic python type
+
+        # Basic JSON-safe scalars — no conversion needed
         if isinstance(self.value, (int, float, bool, type(None))):
             return self.value
         if isinstance(self.value, str):
             if len(self.value) > 1000:
                 return self.value[:1000] + "... [truncated]"
             return self.value
-            
+
+        # bytes — not JSON-serializable, convert to readable hex preview
+        if isinstance(self.value, (bytes, bytearray)):
+            size = len(self.value)
+            if size <= 32:
+                return f"[bytes: {self.value.hex()}]"
+            return f"[bytes: {size} bytes]"
+
         # Prevent freezing on huge lists and dicts
         if isinstance(self.value, list):
             if len(self.value) > 100:
@@ -84,24 +91,28 @@ class Variable:
                 return json.loads(s)
             except Exception:
                 return f"[List with {len(self.value)} elements]"
-                
+
         if isinstance(self.value, dict):
             if len(self.value) > 50:
-                return f"{{Dictionary with {len(self.value)} keys}}"
+                return f"{{{{Dictionary with {len(self.value)} keys}}}}"
             try:
                 s = json.dumps(self.value)
                 if len(s) > 5000:
-                    return f"{{Large Dictionary with {len(self.value)} keys}}"
+                    return f"{{{{Large Dictionary with {len(self.value)} keys}}}}"
                 return json.loads(s)
             except Exception:
-                 return f"{{Dictionary with {len(self.value)} keys}}"
-                 
+                return f"{{{{Dictionary with {len(self.value)} keys}}}}"
+
+        # sets, frozensets
+        if isinstance(self.value, (set, frozenset)):
+            return f"[{type(self.value).__name__} with {len(self.value)} elements]"
+
         try:
             # fallback for unhandled objects
             res = str(self.value)
             return res[:1000] + "... [truncated]" if len(res) > 1000 else res
         except Exception:
-            return "[Object]"
+            return f"[{type(self.value).__name__}]"
 
 
 class VariableRegistry:
@@ -381,16 +392,36 @@ class VariableRegistry:
             return result
     
     def to_json(self) -> str:
-        """Serialize registry state to JSON"""
+        """Serialize registry state to JSON — never raises on unserializable values."""
+        def _safe_encoder(obj: Any) -> str:
+            """Last-resort encoder for objects that survive _serialize_value()."""
+            if isinstance(obj, (bytes, bytearray)):
+                return f"[bytes: {len(obj)} bytes]"
+            if isinstance(obj, (set, frozenset)):
+                return list(obj)
+            # numpy/pandas scalars and other numeric types
+            try:
+                import numpy as np
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                if isinstance(obj, np.floating):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return f"[ndarray shape={obj.shape}]"
+            except ImportError:
+                pass
+            return f"[{type(obj).__name__}: not serializable]"
+
         with self._lock:
-            return json.dumps({
+            payload = {
                 "global": [v.to_dict() for v in self._global.values()],
                 "workflow": [v.to_dict() for v in self._workflow.values()],
                 "nodes": {
                     node_id: [v.to_dict() for v in vars_dict.values()]
                     for node_id, vars_dict in self._nodes.items()
                 }
-            })
+            }
+        return json.dumps(payload, default=_safe_encoder)
     
     def inject_into_namespace(self, namespace: Dict[str, Any], node_id: Optional[str] = None) -> None:
         """
