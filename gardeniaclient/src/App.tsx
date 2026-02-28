@@ -1160,6 +1160,12 @@ const Flow = () => {
                     <ProgressBar />
                     <button
                         className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
+                        onClick={() => { }}
+                    >
+                        VALIDATE
+                    </button>
+                    <button
+                        className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-[#ccc] px-3 py-1 rounded-[3px] text-xs transition-colors border border-[#333]"
                         onClick={runWorkflow}
                     >
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
