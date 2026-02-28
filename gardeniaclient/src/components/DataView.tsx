@@ -137,8 +137,8 @@ const EmptyState = () => (
             <FileSpreadsheet className="w-10 h-10 text-[#333]" />
         </div>
         <div className="text-center">
-            <p className="text-sm font-medium text-[#555]">No datasets yet</p>
-            <p className="text-xs text-[#444] mt-1">Run a workflow to create datasets</p>
+            <p className="text-sm font-medium text-[#555]">No data yet</p>
+            <p className="text-xs text-[#444] mt-1">Run a workflow to create data</p>
         </div>
     </div>
 );
@@ -200,7 +200,7 @@ export const DataView = () => {
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h2 className="text-lg font-bold text-[#e5e5e5] tracking-tight">
-                        My Datasets
+                        My Data
                     </h2>
                     <p className="text-xs text-[#666] mt-0.5">
                         {datasets.length} datasets available
@@ -231,8 +231,8 @@ export const DataView = () => {
                         key={filter.id}
                         onClick={() => setActiveFilter(filter.id)}
                         className={`px-3 py-1 text-xs rounded-full border transition-colors whitespace-nowrap ${activeFilter === filter.id
-                                ? 'bg-emerald-900/30 text-emerald-400 border-emerald-900/50'
-                                : 'bg-[#1f1f23] text-[#888] border-[#333] hover:bg-[#2a2a2e] hover:text-[#ccc]'
+                            ? 'bg-emerald-900/30 text-emerald-400 border-emerald-900/50'
+                            : 'bg-[#1f1f23] text-[#888] border-[#333] hover:bg-[#2a2a2e] hover:text-[#ccc]'
                             }`}
                     >
                         {filter.label}

@@ -13,6 +13,7 @@ import { CodeEditor } from './components/CodeEditor';
 import { NodeContextMenu } from './components/NodeContextMenu';
 import { CustomMiniMap } from './components/CustomMiniMap';
 import { StreamEdge } from './components/StreamEdge';
+import { DataSidebar } from './components/DataSidebar';
 import { ToolRegistry } from './registry/tools';
 import { Node } from '@xyflow/react';
 import { PackageManager } from './components/PackageManager';
@@ -1189,7 +1190,7 @@ const Flow = () => {
                         style={{ width: leftPanelWidth }}
                     >
                         <div className="h-8 bg-[#2a2a2a] flex items-center px-3 border-b border-[#121212] text-xs font-semibold text-[#bbb]">
-                            {viewMode === 'code' ? 'NODES' : 'GARDENS'}
+                            {viewMode === 'code' ? 'NODES' : viewMode === 'data' ? 'TOOLS' : 'GARDENS'}
                         </div>
 
                         {viewMode === 'code' ? (
@@ -1198,6 +1199,8 @@ const Flow = () => {
                                 onNodeSelect={(id) => setSelectedNodeId(id)}
                                 selectedNodeId={selectedNodeId}
                             />
+                        ) : viewMode === 'data' ? (
+                            <DataSidebar />
                         ) : (
                             <Sidebar />
                         )}
