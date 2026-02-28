@@ -85,7 +85,7 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                                                 type="text"
                                                 value={node.data.label}
                                                 onChange={(e) => onUpdate(node.id, { ...node.data, label: e.target.value })}
-                                                className="w-full bg-[#1f1f23] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-[#d97706] outline-none"
+                                                className="w-full select-text cursor-text bg-[#1f1f23] border border-[#333] rounded-[2px] px-2 py-1 text-xs text-[#ccc] focus:border-[#d97706] outline-none"
                                             />
                                         </div>
                                     </div>
@@ -118,7 +118,7 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                                                                 const newValues = { ...node.data.parameterValues, [param.name]: e.target.value };
                                                                 onUpdate(node.id, { ...node.data, parameterValues: newValues });
                                                             }}
-                                                            className="w-full bg-[#121212] border border-[#333] rounded-[2px] pl-7 pr-2 py-1.5 text-xs text-[#ccc] focus:border-[#34d399] outline-none transition-colors"
+                                                            className="w-full select-text cursor-text bg-[#121212] border border-[#333] rounded-[2px] pl-7 pr-2 py-1.5 text-xs text-[#ccc] focus:border-[#34d399] outline-none transition-colors"
                                                         />
                                                     </div>
                                                 )}
@@ -134,7 +134,7 @@ export const Inspector = ({ node, onUpdate, activeTab, onTabChange }: InspectorP
                                                                 const newValues = { ...node.data.parameterValues, [param.name]: Number(e.target.value) };
                                                                 onUpdate(node.id, { ...node.data, parameterValues: newValues });
                                                             }}
-                                                            className="w-full bg-[#121212] border border-[#333] rounded-[2px] pl-7 pr-2 py-1.5 text-xs text-[#d97706] focus:border-[#d97706] outline-none transition-colors"
+                                                            className="w-full select-text cursor-text bg-[#121212] border border-[#333] rounded-[2px] pl-7 pr-2 py-1.5 text-xs text-[#d97706] focus:border-[#d97706] outline-none transition-colors"
                                                         />
                                                     </div>
                                                 )}

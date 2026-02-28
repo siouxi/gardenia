@@ -92,6 +92,7 @@ export const PostItNode = ({ data, selected, id }: NodeProps) => {
 
                 <textarea
                     className={`
+                        nodrag nopan select-text cursor-text caret-current
                         flex-1 resize-none bg-transparent text-sm ${colors.text} 
                         font-handwriting whitespace-pre-wrap break-words
                         leading-relaxed outline-none border-none

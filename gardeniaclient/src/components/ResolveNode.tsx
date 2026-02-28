@@ -48,7 +48,7 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
                 <span className="text-[9px] text-[#888] font-bold uppercase tracking-wider">{param.label}</span>
                 <input
                     type={param.type === 'number' ? 'number' : 'text'}
-                    className="nodrag nopan bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
+                    className="nodrag nopan select-text cursor-text caret-white bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onBlur={() => {
