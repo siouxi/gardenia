@@ -119,8 +119,42 @@ class StreamChannel:
         return self._subscribers[subscriber_id]
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:
-        if self._loop is None:
-            self._loop = asyncio.get_event_loop()
+        """Get the event loop safely on all Python versions (3.7–3.12+).
+
+        Priority:
+        1. Explicitly set loop via set_loop() — always preferred
+        2. asyncio.get_running_loop() — safe, raises RuntimeError if no loop running
+        3. asyncio.get_event_loop() — deprecated on Py3.10, RuntimeError on Py3.12
+        4. Create a new event loop — last resort, logs a warning
+        """
+        if self._loop is not None:
+            return self._loop
+
+        # Prefer the currently running loop (safe on all versions)
+        try:
+            self._loop = asyncio.get_running_loop()
+            return self._loop
+        except RuntimeError:
+            pass
+
+        # Fallback for non-async contexts (deprecated on Py3.10+)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                self._loop = loop
+                return self._loop
+        except RuntimeError:
+            pass
+
+        # Python 3.12: no current loop exists — create one
+        log.warning(
+            "StreamChannel._get_loop(): no event loop found. "
+            "Creating a new one. For best results, call set_loop() "
+            "from an async context before write_batch()."
+        )
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
         return self._loop
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:

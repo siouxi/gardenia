@@ -214,8 +214,17 @@ class PlasmaStore:
             )
             return ref
 
+        except MemoryError:
+            # /dev/shm is full — fall back to disk instead of crashing the workflow
+            log.warning(
+                f"PlasmaStore: /dev/shm is full for '{key}' "
+                f"({buf_size / 1024 / 1024:.1f} MB). "
+                f"Falling back to disk-based IPC. Consider clearing shm or "
+                f"reducing chunk size."
+            )
+            return self._put_fallback(key, table, buf.to_pybytes())
         except (OSError, PermissionError) as e:
-            # Fallback to disk-based file if shared memory is unavailable
+            # Shared memory unavailable (permissions, OS limits, etc.)
             log.warning(
                 f"PlasmaStore: shared memory failed for '{key}': {e}. "
                 f"Falling back to disk-based IPC."
@@ -405,12 +414,55 @@ class PlasmaStore:
     # ------------------------------------------------------------------
 
     def _to_arrow_table(self, data: Any) -> pa.Table:
-        """Convert various input types to Arrow Table."""
+        """Convert various input types to Arrow Table.
+
+        Handles common pandas non-Arrow-native dtypes (categoricals, nullable
+        integers, timezone-aware datetimes, custom ExtensionArrays) by retrying
+        with safe=False and then falling back to object-dtype casting.
+        """
         if isinstance(data, pa.Table):
             return data
 
         if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            return pa.Table.from_pandas(data, preserve_index=False)
+            try:
+                return pa.Table.from_pandas(data, preserve_index=False)
+            except Exception as first_err:
+                # Retry: some dtypes (Categorical, Int8Dtype, ExtensionArray)
+                # need explicit conversion. Convert problematic columns to
+                # their numpy equivalent first.
+                log.debug(
+                    f"PlasmaStore: Arrow conversion failed ({first_err}), "
+                    f"retrying with dtype coercion."
+                )
+                try:
+                    coerced = data.copy()
+                    for col in coerced.columns:
+                        dtype = coerced[col].dtype
+                        if hasattr(dtype, 'numpy_dtype'):
+                            # pandas ExtensionDtype (Int8, Float32, etc.)
+                            coerced[col] = coerced[col].astype(dtype.numpy_dtype)
+                        elif hasattr(dtype, 'categories'):
+                            # CategoricalDtype
+                            coerced[col] = coerced[col].astype(str)
+                    return pa.Table.from_pandas(coerced, preserve_index=False)
+                except Exception as second_err:
+                    # Last resort: stringify every object-dtype column individually
+                    # so Arrow gets a uniform str type it can always accept.
+                    log.warning(
+                        f"PlasmaStore: dtype coercion also failed ({second_err}), "
+                        f"converting object columns to str. Some type info may be lost."
+                    )
+                    try:
+                        coerced2 = data.copy()
+                        for col in coerced2.columns:
+                            if coerced2[col].dtype == object:
+                                coerced2[col] = coerced2[col].astype(str)
+                        return pa.Table.from_pandas(coerced2, preserve_index=False)
+                    except Exception:
+                        # Nuclear option: stringify everything
+                        return pa.Table.from_pandas(
+                            data.applymap(str), preserve_index=False
+                        )
 
         if isinstance(data, dict):
             return pa.table(data)

@@ -112,10 +112,29 @@ class Orchestrator:
         
         # Parse workflow
         nodes, edges = self._parse_workflow(workflow_data)
-        
+
         if not nodes:
             return {"status": "error", "error": "No nodes in workflow"}
-        
+
+        # Validate start_from / only_node point to real nodes
+        node_ids = {n.id for n in nodes}
+        if only_node and only_node not in node_ids:
+            return {
+                "status": "error",
+                "error": (
+                    f"only_node '{only_node}' does not exist in this workflow. "
+                    f"Available IDs: {sorted(node_ids)}"
+                ),
+            }
+        if start_from and start_from not in node_ids:
+            return {
+                "status": "error",
+                "error": (
+                    f"start_from '{start_from}' does not exist in this workflow. "
+                    f"Available IDs: {sorted(node_ids)}"
+                ),
+            }
+
         # For partial re-runs: clear ONLY the stale outputs of nodes that will
         # re-execute. This prevents downstream nodes reading old values while
         # keeping all upstream variables intact for the re-running node to consume.
