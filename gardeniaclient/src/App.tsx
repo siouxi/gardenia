@@ -316,7 +316,7 @@ const Flow = () => {
     }, [isResizingLeft, isResizingRight, onMouseMove, stopResizing, setNodes]);
     const { screenToFlowPosition, fitView } = useReactFlow();
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-    const [contextMenu, setContextMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ type: 'node' | 'edge'; id: string; x: number; y: number } | null>(null);
 
     // Workflow orchestrator state (used for execution visualization)
     // const workflowStatus = useWorkflowStore((state) => state.status);
@@ -486,7 +486,12 @@ const Flow = () => {
         event.preventDefault();
         // Don't show for start/end/postit nodes
         if (node.data.toolId === 'flow-start' || node.data.toolId === 'flow-end' || node.type === 'postit') return;
-        setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY });
+        setContextMenu({ type: 'node', id: node.id, x: event.clientX, y: event.clientY });
+    }, []);
+
+    const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: any) => {
+        event.preventDefault();
+        setContextMenu({ type: 'edge', id: edge.id, x: event.clientX, y: event.clientY });
     }, []);
 
     const updateNodeData = useCallback((nodeId: string, newData: NodeData) => {
@@ -590,6 +595,11 @@ const Flow = () => {
             setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
         }
     }, [pushSnapshot, nodes, edges, setNodes, setEdges]);
+
+    const deleteEdge = useCallback((edgeId: string) => {
+        pushSnapshot(nodes, edges, 'Delete edge');
+        setEdges(eds => eds.filter(e => e.id !== edgeId));
+    }, [pushSnapshot, nodes, edges, setEdges]);
 
     // --- Node Grouping ---
     const groupSelectedNodes = useCallback(() => {
@@ -1208,6 +1218,7 @@ const Flow = () => {
                                 onNodeClick={onNodeClick}
                                 onNodeDoubleClick={onNodeDoubleClick}
                                 onNodeContextMenu={onNodeContextMenu}
+                                onEdgeContextMenu={onEdgeContextMenu}
                                 onPaneClick={onPaneClick}
                                 nodeTypes={nodeTypes}
                                 edgeTypes={edgeTypes}
@@ -1231,10 +1242,10 @@ const Flow = () => {
                                     {showMiniMap ? '✕' : '🗺'}
                                 </button>
                             </ReactFlow>
-                            {contextMenu && (
+                            {contextMenu && contextMenu.type === 'node' && (
                                 <NodeContextMenu
-                                    nodeId={contextMenu.nodeId}
-                                    nodeLabel={nodes.find(n => n.id === contextMenu.nodeId)?.data.label || 'Node'}
+                                    nodeId={contextMenu.id}
+                                    nodeLabel={nodes.find(n => n.id === contextMenu.id)?.data.label || 'Node'}
                                     x={contextMenu.x}
                                     y={contextMenu.y}
                                     selectedCount={nodes.filter(n => n.selected).length || 1}
@@ -1243,9 +1254,26 @@ const Flow = () => {
                                     onDelete={deleteNode}
                                     onGroup={groupSelectedNodes}
                                     onUngroup={ungroupNodes}
-                                    isGrouped={nodes.find(n => n.id === contextMenu.nodeId)?.type === 'group'}
+                                    isGrouped={nodes.find(n => n.id === contextMenu.id)?.type === 'group'}
                                     onClose={() => setContextMenu(null)}
                                 />
+                            )}
+                            {contextMenu && contextMenu.type === 'edge' && (
+                                <div
+                                    className="fixed z-[100] min-w-[150px] bg-[#2a2a2e] border border-[#444] rounded-lg shadow-2xl py-1.5 select-none"
+                                    style={{ left: Math.min(contextMenu.x, window.innerWidth - 180), top: Math.min(contextMenu.y, window.innerHeight - 100) }}
+                                >
+                                    <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-[#333] mb-1">
+                                        Connection
+                                    </div>
+                                    <button
+                                        className="w-full px-3 py-2 text-xs text-left hover:bg-red-900/30 flex items-center gap-2.5 text-red-400 transition-colors"
+                                        onClick={() => { deleteEdge(contextMenu.id); setContextMenu(null); }}
+                                    >
+                                        <span className="text-sm">✂</span>
+                                        Delete Connection
+                                    </button>
+                                </div>
                             )}
                         </div>
                     )}

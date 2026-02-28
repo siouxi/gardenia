@@ -19,6 +19,7 @@ export const StreamEdge = ({
     source,
     style = {},
     markerEnd,
+    selected,
 }: EdgeProps) => {
     const [hovered, setHovered] = useState(false);
     const { getNode } = useReactFlow();
@@ -55,12 +56,18 @@ export const StreamEdge = ({
                 id={id}
                 path={edgePath}
                 markerEnd={markerEnd}
-                style={{ stroke: '#555', strokeWidth: 1.5, ...style }}
+                style={{
+                    stroke: selected ? '#34d399' : '#555',
+                    strokeWidth: selected ? 3 : 1.5,
+                    cursor: 'pointer',
+                    ...style
+                }}
             />
         );
     }
 
     // Streaming edge — animated dashes with glow
+    const active = hovered || selected;
     return (
         <g
             onMouseEnter={() => setHovered(true)}
@@ -80,8 +87,8 @@ export const StreamEdge = ({
                 d={edgePath}
                 fill="none"
                 stroke="url(#stream-gradient)"
-                strokeWidth={hovered ? 4 : 2.5}
-                strokeOpacity={hovered ? 0.6 : 0.3}
+                strokeWidth={active ? 5 : 2.5}
+                strokeOpacity={active ? 0.8 : 0.3}
                 filter="blur(3px)"
             />
 
@@ -90,7 +97,7 @@ export const StreamEdge = ({
                 d={edgePath}
                 fill="none"
                 stroke="url(#stream-gradient)"
-                strokeWidth={hovered ? 2.5 : 1.8}
+                strokeWidth={active ? 3 : 1.8}
                 strokeDasharray="8 4"
                 markerEnd={markerEnd as string}
                 style={{
@@ -99,7 +106,7 @@ export const StreamEdge = ({
             />
 
             {/* Streaming badge at midpoint */}
-            {hovered && (
+            {active && (
                 <g transform={`translate(${labelX}, ${labelY})`}>
                     <rect
                         x={-52}
@@ -127,7 +134,7 @@ export const StreamEdge = ({
             )}
 
             {/* Always-visible small icon at midpoint */}
-            {!hovered && (
+            {!active && (
                 <g transform={`translate(${labelX}, ${labelY})`}>
                     <circle r={8} fill="#1a1a2e" stroke="#7c3aed" strokeWidth={1} opacity={0.9} />
                     <text

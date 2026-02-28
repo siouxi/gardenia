@@ -36,7 +36,7 @@
         }
       ],
       "size_bytes": 205300,
-      "created_at": "2026-02-28T15:17:10.660167",
+      "created_at": "2026-02-28T15:29:21.597871",
       "source_node_id": "csv-input-1772244852385",
       "preview": [
         {
@@ -122,7 +122,7 @@
         }
       ],
       "size_bytes": 205300,
-      "created_at": "2026-02-28T15:17:10.699732",
+      "created_at": "2026-02-28T15:29:21.626511",
       "source_node_id": "csv-input-1772244852385",
       "preview": [
         {
@@ -204,7 +204,7 @@
         }
       ],
       "size_bytes": 185696,
-      "created_at": "2026-02-28T15:17:10.773401",
+      "created_at": "2026-02-28T15:29:21.675241",
       "source_node_id": "select-columns-1772244867099",
       "preview": [
         {
