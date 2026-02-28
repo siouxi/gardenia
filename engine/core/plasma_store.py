@@ -114,6 +114,32 @@ class PlasmaStore:
         self._segments: Dict[str, shared_memory.SharedMemory] = {}
         self._refs: Dict[str, PlasmaRef] = {}
         self._fallback_dir: Optional[Path] = None  # Disk fallback
+        self._sweep_stale_shm()
+
+    def _sweep_stale_shm(self, max_age_seconds: int = 600) -> None:
+        """
+        Delete stale gardenia_* Arrow files from /dev/shm left by previous
+        sessions (i.e. not tracked by this process's _segments dict).
+        Files are considered stale if they are older than `max_age_seconds`.
+        """
+        import glob
+        import time
+        shm_dir = "/dev/shm"
+        if not os.path.isdir(shm_dir):
+            return
+        pattern = os.path.join(shm_dir, "gardenia_*")
+        now = time.time()
+        cleaned = 0
+        for fpath in glob.glob(pattern):
+            try:
+                age = now - os.path.getmtime(fpath)
+                if age > max_age_seconds:
+                    os.unlink(fpath)
+                    cleaned += 1
+            except OSError:
+                pass
+        if cleaned:
+            log.info(f"PlasmaStore: swept {cleaned} stale /dev/shm files from previous sessions")
 
     # ------------------------------------------------------------------
     # Public API

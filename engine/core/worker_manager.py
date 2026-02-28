@@ -559,6 +559,15 @@ class RWorkerBridge:
                         except Exception as e:
                             log.warning(f"PlasmaStore: failed to store R var '{name}': {e}")
                             plasma_key = None
+                        finally:
+                            # Always delete the source IPC file from /dev/shm (prevent leak
+                            # even if PlasmaStore ingestion failed).
+                            try:
+                                os.remove(ipc_path)
+                                ipc_path = None  # Data is now in PlasmaStore (or was discarded)
+                                log.debug(f"PlasmaStore: deleted R IPC file after ingestion")
+                            except OSError:
+                                pass
                     else:
                         ipc_path = None
                 

@@ -27,7 +27,17 @@ process_command <- function(command_json, env) {
 
             # 1. Load variables from Input IPC files (if provided)
             if (!is.null(request$input_ipcs)) {
-                for (ipc_info in request$input_ipcs) {
+                # jsonlite::fromJSON auto-simplifies a single-row array to a data.frame
+                # or named list. We normalize to always get a proper list of records.
+                ipc_list <- request$input_ipcs
+                if (is.data.frame(ipc_list)) {
+                    # Multiple entries simplified to a data.frame — convert row-by-row
+                    ipc_list <- lapply(seq_len(nrow(ipc_list)), function(i) as.list(ipc_list[i, ]))
+                } else if (is.list(ipc_list) && !is.null(names(ipc_list)) && "path" %in% names(ipc_list)) {
+                    # Single entry simplified to a named list
+                    ipc_list <- list(ipc_list)
+                }
+                for (ipc_info in ipc_list) {
                     if (file.exists(ipc_info$path)) {
                         tryCatch(
                             {

@@ -218,9 +218,20 @@ class Orchestrator:
         try:
             # Use backend from request or default
             backend = workflow_data.get("backend", self._backend)
+            
+            # Detect if any node is a streaming generator.
+            # Streaming workflows MUST run in parallel so producers and consumers
+            # execute concurrently. Regular workflows run serially (topological order)
+            # so that upstream variable state is committed before downstream nodes read.
+            from core.worker_manager import _code_has_yield
+            has_streaming = any(
+                node.language == "python" and _code_has_yield(node.code)
+                for node in nodes
+            )
+            
             results = await self._current_executor.execute(
                 execute_node_fn=execute_node_wrapper,
-                parallel=True,  # Mandatory for streaming (producers and consumers must run simultaneously)
+                parallel=has_streaming,  # Only parallel when streaming (avoids race conditions for R/Python data hand-off)
                 backend=backend,
                 start_from=start_from,
                 only_node=only_node
@@ -228,6 +239,11 @@ class Orchestrator:
             
             # Get final variable state
             variables = self.registry.list_variables()
+            
+            # Release shared memory segments now that the workflow is done.
+            # This frees /dev/shm space between runs (prevents accumulation).
+            from core.plasma_store import get_plasma_store
+            get_plasma_store().clear()
             
             self._send_message({
                 "type": "execution_complete",
