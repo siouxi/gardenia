@@ -280,7 +280,6 @@ const Flow = () => {
 
         const onNodeUpdateParameter = (e: any) => {
             const { nodeId, paramName, value } = e.detail;
-            log(`[App] Update param: ${nodeId} -> ${paramName} = ${value}`);
             setNodes((nds) =>
                 nds.map((node) => {
                     if (node.id === nodeId) {

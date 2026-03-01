@@ -50,19 +50,12 @@ const NodeParameter = ({ param, initialValue, nodeId }: { param: any, initialVal
                     type={param.type === 'number' ? 'number' : 'text'}
                     className="nodrag nopan select-text cursor-text caret-white bg-[#2a2a2a] text-white text-[10px] py-1 px-2 rounded-sm border border-[#404040] focus:border-[#34d399] outline-none w-full"
                     value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    onBlur={() => {
-                        const val = param.type === 'number' ? parseFloat(value) : value;
+                    onChange={(e) => {
+                        setValue(e.target.value);
+                        const val = param.type === 'number' ? parseFloat(e.target.value) : e.target.value;
                         commitChange(val);
                     }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            const val = param.type === 'number' ? parseFloat(value) : value;
-                            commitChange(val);
-                            (e.target as HTMLInputElement).blur();
-                        }
-                        e.stopPropagation();
-                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
                     placeholder={String(param.default || '')}
                 />
             </div>
