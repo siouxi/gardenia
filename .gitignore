@@ -10,6 +10,9 @@ node_modules/
 dist/
 dist-electron/
 
+#Storage
+.gardenia_data/
+
 # IDE
 .idea/
 .vscode/
