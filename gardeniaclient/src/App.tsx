@@ -432,6 +432,16 @@ const Flow = () => {
             const nodeType = toolId === 'post-it' ? 'postit' : 'resolve';
             const nodeId = `${toolId}-${Date.now()}`;
 
+            // Pre-populate default parameter values
+            const defaultParams: Record<string, any> = {};
+            if (tool.parameters) {
+                tool.parameters.forEach((param: any) => {
+                    if (param.default !== undefined) {
+                        defaultParams[param.name] = param.default;
+                    }
+                });
+            }
+
             const newNode: AppNode = {
                 id: nodeId,
                 type: nodeType,
@@ -441,7 +451,7 @@ const Flow = () => {
                     category: tool.category,
                     toolId: tool.id,
                     toolData: tool,
-                    parameterValues: {},
+                    parameterValues: defaultParams,
                     // Use default code and language from tool definition, or fallback
                     code: tool.defaultCode || '# Hola Mundo',
                     language: tool.language || 'python'

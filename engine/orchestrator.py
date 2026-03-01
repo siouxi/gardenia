@@ -62,17 +62,33 @@ class Orchestrator:
         nodes = []
         for n in workflow_data.get("nodes", []):
             data = n.get("data", {})
+            tool_data = data.get("toolData", {})
+            
+            # Resolve default parameters
+            node_params = data.get("parameterValues", {})
+            tool_params_def = tool_data.get("parameters", [])
+            resolved_params = {}
+            for p in tool_params_def:
+                p_name = p.get("name")
+                if p_name in node_params:
+                    resolved_params[p_name] = node_params[p_name]
+                elif "default" in p:
+                    resolved_params[p_name] = p["default"]
+            for k, v in node_params.items():
+                if k not in resolved_params:
+                    resolved_params[k] = v
+
             node = DAGNode(
                 id=n["id"],
                 label=data.get("label", "Unknown"),
                 tool_id=data.get("toolId", ""),
                 code=data.get("code", ""),
                 language=data.get("language", "python"),
-                parameters=data.get("parameterValues", {}),
+                parameters=resolved_params,
                 timeout=data.get("timeout", 60),
                 memory_limit=data.get("memoryLimit", 512),
                 dependencies=data.get("dependencies", []),
-                outputs=data.get("toolData", {}).get("outputs", []),
+                outputs=tool_data.get("outputs", []),
             )
             nodes.append(node)
         

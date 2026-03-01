@@ -323,16 +323,36 @@ class RWorkerBridge:
             )
             
             async def consume_stderr():
+                import re
+                buffer = ""
                 while self._process and self._process.returncode is None:
                     try:
-                        line = await self._process.stderr.readline()
-                        if not line:
+                        # Read chunks to prevent memory/CPU exhaustion from \r (progress bars)
+                        chunk = await self._process.stderr.read(4096)
+                        if not chunk:
                             break
-                        line_str = line.decode('utf-8').strip()
-                        if line_str:
-                            log.debug(f"[R stderr] {line_str}")
-                    except Exception:
+                        
+                        buffer += chunk.decode('utf-8', errors='replace')
+                        
+                        while True:
+                            match = re.search(r'[\r\n]', buffer)
+                            if not match:
+                                if len(buffer) > 8192:
+                                    log.debug(f"[R stderr] {buffer[:8192]}")
+                                    buffer = buffer[8192:]
+                                break
+                                
+                            line = buffer[:match.start()].strip()
+                            if line:
+                                log.debug(f"[R stderr] {line}")
+                            buffer = buffer[match.end():]
+                            
+                    except Exception as e:
+                        log.debug(f"[R stderr] reader exception: {e}")
                         break
+                
+                if buffer.strip():
+                    log.debug(f"[R stderr] {buffer.strip()}")
                         
             self._stderr_task = asyncio.create_task(consume_stderr())
             self._is_ready = True
@@ -519,7 +539,11 @@ class RWorkerBridge:
                     break
                 except json.JSONDecodeError:
                     log.debug(f"[R stdout unexpected] {line}")
-                    stdout_str += line + "\n"
+                    # Accumulate limited stdout to avoid RAM exhaustion / UI freeze
+                    if len(stdout_str) < 1024 * 512: # Max 512KB of raw printouts
+                        stdout_str += line + "\n"
+                    elif len(stdout_str) == 1024 * 512:
+                        stdout_str += "\n... [Output truncated due to size limits]\n"
             
             status = response.get("status", "error")
             output = response.get("output", "")

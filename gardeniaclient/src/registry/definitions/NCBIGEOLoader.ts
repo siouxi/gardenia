@@ -37,7 +37,9 @@ if (!requireNamespace("GEOquery", quietly = TRUE)) {
 }
 library(GEOquery)
 
-# Change download method for better compatibility and to show progress occasionally
+# Change download method for better compatibility
+# Add timeout limits and suppress excessive download progress bars
+options(timeout = max(1000, getOption("timeout")))
 options('download.file.method' = 'auto')
 
 # Download supplementary files
@@ -45,7 +47,15 @@ options('download.file.method' = 'auto')
 # and downloads the files into it.
 print(sprintf("[%s] Connecting to NCBI GEO to download supplementary files...", Sys.time()))
 supp_files_info <- tryCatch({
-    res <- getGEOSuppFiles(accession, makeDirectory = TRUE, baseDir = getwd(), fetch_files = TRUE)
+    # Use localized directory within the workspace for downloads
+    target_dir <- file.path(getwd(), ".gardenia_data")
+    if (!dir.exists(target_dir)) {
+        dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+    }
+    
+    # Download files (WorkerManager handles progress bar stderr gracefully)
+    res <- getGEOSuppFiles(accession, makeDirectory = TRUE, baseDir = target_dir, fetch_files = TRUE)
+    
     print(sprintf("[%s] Finished downloading supplementary files.", Sys.time()))
     res
 }, error = function(e) {
