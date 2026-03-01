@@ -24,9 +24,8 @@ const tool: ToolDefinition = {
     defaultCode: `# NCBI GEO Loader Node
 # Uses Bioconductor's GEOquery to download series metadata and supplementary files
 
-accession <- params$accession
-
-if (is.null(accession) || accession == "") {
+# 'accession' is automatically injected into the global environment by Gardenia's execution engine
+if (!exists("accession") || is.null(accession) || accession == "") {
     stop("Error: No GEO Accession ID provided.")
 }
 
@@ -38,12 +37,17 @@ if (!requireNamespace("GEOquery", quietly = TRUE)) {
 }
 library(GEOquery)
 
+# Change download method for better compatibility and to show progress occasionally
+options('download.file.method' = 'auto')
+
 # Download supplementary files
 # This creates a directory named after the accession in the current working directory
 # and downloads the files into it.
-print("Downloading supplementary files...")
+print(sprintf("[%s] Connecting to NCBI GEO to download supplementary files...", Sys.time()))
 supp_files_info <- tryCatch({
-    getGEOSuppFiles(accession, makeDirectory = TRUE, baseDir = getwd())
+    res <- getGEOSuppFiles(accession, makeDirectory = TRUE, baseDir = getwd(), fetch_files = TRUE)
+    print(sprintf("[%s] Finished downloading supplementary files.", Sys.time()))
+    res
 }, error = function(e) {
     print(sprintf("Failed to download supplementary files: %s", e$message))
     return(NULL)
@@ -54,7 +58,7 @@ supp_files_info <- tryCatch({
 # gse <- getGEO(accession, GSEMatrix = TRUE)
 
 if (!is.null(supp_files_info)) {
-    print("Successfully downloaded files:")
+    print(sprintf("[%s] Successfully retrieved files:", Sys.time()))
     print(rownames(supp_files_info))
     
     # Expose the downloaded paths as a summary table
