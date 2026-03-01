@@ -532,6 +532,8 @@ const Flow = () => {
                     language: n.data.language || 'python',
                     parameterValues: n.data.parameterValues || {},
                     dependencies: n.data.dependencies || [],
+                    timeout: n.data.timeout,
+                    memoryLimit: n.data.memoryLimit,
                 }
             })),
             edges: edges.map(e => ({
