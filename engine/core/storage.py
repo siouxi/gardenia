@@ -84,8 +84,9 @@ class ArrowStorage:
         if base_path:
             self.base_path = Path(base_path)
         else:
-            # Default to .gardenia_data in current working directory
-            self.base_path = Path.cwd() / ".gardenia_data"
+            # Default to .gardenia_data in project root
+            project_root = Path(__file__).resolve().parent.parent.parent
+            self.base_path = project_root / ".gardenia_data"
         
         self.base_path.mkdir(parents=True, exist_ok=True)
         self._datasets: Dict[str, DatasetMetadata] = {}

@@ -48,7 +48,9 @@ options('download.file.method' = 'auto')
 print(sprintf("[%s] Connecting to NCBI GEO to download supplementary files...", Sys.time()))
 supp_files_info <- tryCatch({
     # Use localized directory within the workspace for downloads
-    target_dir <- file.path(getwd(), ".gardenia_data")
+    # Engine runs from gardenia/engine or gardenia/gardeniaclient, so we go up one level
+    # or just use the absolute project root to be safe and unified
+    target_dir <- "/home/nicolas/Documentos/gardenia/.gardenia_data"
     if (!dir.exists(target_dir)) {
         dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
     }

@@ -484,7 +484,8 @@ class PlasmaStore:
     def _get_fallback_dir(self) -> Path:
         """Get or create the fallback directory for disk-based IPC."""
         if self._fallback_dir is None:
-            self._fallback_dir = Path.cwd() / ".gardenia_data" / "plasma_fallback"
+            project_root = Path(__file__).resolve().parent.parent.parent
+            self._fallback_dir = project_root / ".gardenia_data" / "plasma_fallback"
             self._fallback_dir.mkdir(parents=True, exist_ok=True)
         return self._fallback_dir
 
