@@ -9,6 +9,23 @@ body,
     margin: 0;
     overflow: hidden;
     @apply bg-slate-950 text-slate-100;
+    color-scheme: dark;
+}
+
+/* Custom styling for number input spin buttons */
+input[type="number"]::-webkit-inner-spin-button, 
+input[type="number"]::-webkit-outer-spin-button {
+    opacity: 0.8;
+    cursor: pointer;
+    background: #2a2a2a;
+    border-left: 1px solid #404040;
+    transition: all 0.2s ease;
+}
+
+input[type="number"]::-webkit-inner-spin-button:hover, 
+input[type="number"]::-webkit-outer-spin-button:hover {
+    opacity: 1;
+    background: #34d399; /* Usa el color primario de la aplicación para resaltar cuando se hace hover */
 }
 
 /* Custom Scrollbar */
