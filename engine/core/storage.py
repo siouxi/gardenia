@@ -306,9 +306,11 @@ class ArrowStorage:
             }
             
             if include_stats and PANDAS_AVAILABLE:
-                df = self.read(name)
-                if df is not None:
-                    result["stats"] = df.describe().to_dict()
+                # Read a sample for stats instead of the full dataset
+                full_table = pq.read_table(file_path, memory_map=True)
+                sample_size = min(10000, full_table.num_rows)
+                sample = full_table.slice(0, sample_size).to_pandas()
+                result["stats"] = sample.describe().to_dict()
             
             return result
         
@@ -333,7 +335,6 @@ class ArrowStorage:
             self._save_index()
             return True
         except Exception as e:
-            log.error(f"Failed to delete dataset '{name}': {e}")
             log.error(f"Failed to delete dataset '{name}': {e}")
             return False
     

@@ -497,11 +497,20 @@ ws_clients = set()
 
 # Monkey-patch _send_message so it pushes to all connected clients (SSE + WS)
 def _queue_message(self, msg: Dict[str, Any]) -> None:
+    critical_types = {"state_change", "execution_complete", "cancelled"}
     for queue in sse_clients | ws_clients:
         try:
             queue.put_nowait(msg)
         except asyncio.QueueFull:
-            pass
+            if msg.get("type") in critical_types:
+                # Drop oldest message to make room for critical ones
+                try:
+                    queue.get_nowait()
+                    queue.put_nowait(msg)
+                except Exception:
+                    pass
+            else:
+                log.debug(f"Dropped non-critical message: {msg.get('type')}")
 
 Orchestrator._send_message = _queue_message
 
@@ -593,7 +602,7 @@ async def handle_sse(request):
     except Exception as e:
         log.warning(f"SSE client disconnected: {e}")
     finally:
-        sse_clients.remove(client_queue)
+        sse_clients.discard(client_queue)
         
     return response
 

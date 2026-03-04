@@ -188,7 +188,11 @@ class StreamChannel:
         loop = self._get_loop()
 
         if not self._subscribers:
-            # No consumers registered yet — discard silently
+            # No consumers registered yet — warn and discard
+            log.warning(
+                f"StreamChannel {self.source_node}: write_batch() called but "
+                f"no subscribers — chunk discarded! ({batch.num_rows} rows lost)"
+            )
             return
 
         import concurrent.futures
@@ -282,17 +286,9 @@ class StreamChannel:
         Synchronous iterator for consumer nodes running in threads.
         Yields pandas DataFrames (converted from Arrow batches).
         """
+        # subscribe() is a plain synchronous dict operation — call it directly
+        queue = self.subscribe(subscriber_id)
         loop = self._get_loop()
-        
-        # We must register the subscriber synchronously if it hasn't been yet
-        # But we must run it in the async loop
-        def _get_queue():
-            return self.subscribe(subscriber_id)
-        
-        future = asyncio.run_coroutine_threadsafe(
-            asyncio.to_thread(_get_queue), loop
-        )
-        queue = future.result(timeout=10)
 
         while True:
             future = asyncio.run_coroutine_threadsafe(
@@ -395,11 +391,14 @@ class StreamRegistry:
 
 # --- Singleton ---
 _stream_registry: Optional[StreamRegistry] = None
+_stream_registry_lock = __import__('threading').Lock()
 
 
 def get_stream_registry() -> StreamRegistry:
-    """Get or create the global StreamRegistry."""
+    """Get or create the global StreamRegistry (thread-safe)."""
     global _stream_registry
     if _stream_registry is None:
-        _stream_registry = StreamRegistry()
+        with _stream_registry_lock:
+            if _stream_registry is None:
+                _stream_registry = StreamRegistry()
     return _stream_registry

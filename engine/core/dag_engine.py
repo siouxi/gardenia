@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -136,9 +136,9 @@ class DAGExecutor:
         Does NOT include start_id itself.
         """
         visited: Set[str] = set()
-        queue: List[str] = [start_id]
+        queue = deque([start_id])
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             for successor in self._adjacency.get(current, []):
                 if successor not in visited:
                     visited.add(successor)
@@ -151,7 +151,7 @@ class DAGExecutor:
         Returns list of node IDs in topological order.
         """
         in_degree = self._in_degree.copy()
-        queue: List[str] = []
+        queue = deque()
         order: List[str] = []
         
         # Start with nodes having 0 in-degree
@@ -160,7 +160,7 @@ class DAGExecutor:
                 queue.append(node_id)
         
         while queue:
-            node_id = queue.pop(0)
+            node_id = queue.popleft()
             order.append(node_id)
             
             for successor in self._adjacency[node_id]:
@@ -327,14 +327,10 @@ class DAGExecutor:
                     
                     done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
                     
-                    if cancel_task in done:
-                        # Cancelled from outside
-                        break
-                    else:
-                        cancel_task.cancel()
-                        
+                    # Always process completed node tasks FIRST (even if cancel fired simultaneously)
                     for task in done:
-                        if task == cancel_task: continue
+                        if task == cancel_task:
+                            continue
                         self._active_tasks.remove(task)
                         node_id = getattr(task, "node_id")
                         result = task.result()
@@ -346,13 +342,19 @@ class DAGExecutor:
                         if node.state == ExecutionState.ERROR:
                             if node.tool_id not in ('flow-start', 'flow-end'):
                                 error_occurred = True
-                                # Optional: we could cancel remaining tasks here, 
-                                # but streaming nodes often gracefully timeout if producers die.
-                                pass
-                            
-                        # In concurrent mode, we don't 'unlock' successors via in_degree.
-                        # However, we still need to handle conditional branching by marking ignored branch targets as skipped.
-                        if not (self._cancelled or error_occurred):
+
+                    # Now check if cancellation was requested
+                    if cancel_task in done:
+                        break
+                    else:
+                        cancel_task.cancel()
+
+                    # Handle conditional branching for completed nodes
+                    if not (self._cancelled or error_occurred):
+                        for task in done:
+                            if task == cancel_task:
+                                continue
+                            node_id = getattr(task, "node_id")
                             active_targets = self._get_branch_successors(node_id)
                             skipped_targets = set(self._adjacency[node_id]) - active_targets
                             

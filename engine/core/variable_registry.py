@@ -12,6 +12,7 @@ Scoped variable storage for workflow execution with:
 from __future__ import annotations
 import json
 import threading
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
@@ -131,7 +132,7 @@ class VariableRegistry:
         self._global: Dict[str, Variable] = {}
         self._workflow: Dict[str, Variable] = {}
         self._nodes: Dict[str, Dict[str, Variable]] = {}  # node_id -> vars
-        self._history: List[Dict[str, Any]] = []  # For debugging
+        self._history: deque = deque(maxlen=500)  # Capped to prevent memory leak
     
     def set(
         self,
@@ -528,17 +529,21 @@ class VariableRegistry:
 
 # Singleton instance for the current workflow
 _registry: Optional[VariableRegistry] = None
+_registry_lock = __import__('threading').Lock()
 
 
 def get_registry() -> VariableRegistry:
-    """Get or create the global variable registry"""
+    """Get or create the global variable registry (thread-safe)."""
     global _registry
     if _registry is None:
-        _registry = VariableRegistry()
+        with _registry_lock:
+            if _registry is None:
+                _registry = VariableRegistry()
     return _registry
 
 
 def reset_registry() -> None:
-    """Reset the global registry (for testing)"""
+    """Reset the global registry (for testing)."""
     global _registry
-    _registry = None
+    with _registry_lock:
+        _registry = None

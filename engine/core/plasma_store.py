@@ -460,8 +460,10 @@ class PlasmaStore:
                         return pa.Table.from_pandas(coerced2, preserve_index=False)
                     except Exception:
                         # Nuclear option: stringify everything
+                        # Use .map() (pandas >= 2.1) with fallback to .applymap()
+                        mapper = getattr(data, 'map', None) or data.applymap
                         return pa.Table.from_pandas(
-                            data.applymap(str), preserve_index=False
+                            mapper(str), preserve_index=False
                         )
 
         if isinstance(data, dict):
@@ -531,19 +533,23 @@ class PlasmaStore:
 # ---------------------------------------------------------------------------
 
 _plasma_store: Optional[PlasmaStore] = None
+_plasma_store_lock = __import__('threading').Lock()
 
 
 def get_plasma_store() -> PlasmaStore:
-    """Get or create the global PlasmaStore instance."""
+    """Get or create the global PlasmaStore instance (thread-safe)."""
     global _plasma_store
     if _plasma_store is None:
-        _plasma_store = PlasmaStore()
+        with _plasma_store_lock:
+            if _plasma_store is None:
+                _plasma_store = PlasmaStore()
     return _plasma_store
 
 
 def reset_plasma_store() -> None:
     """Clear and reset the global PlasmaStore (for testing)."""
     global _plasma_store
-    if _plasma_store is not None:
-        _plasma_store.clear()
-    _plasma_store = None
+    with _plasma_store_lock:
+        if _plasma_store is not None:
+            _plasma_store.clear()
+        _plasma_store = None

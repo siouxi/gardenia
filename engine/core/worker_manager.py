@@ -523,7 +523,7 @@ class RWorkerBridge:
                         timeout=timeout
                     )
                 except asyncio.TimeoutError:
-                    self.stop()
+                    self.stop()  # Kill the hung R process to prevent zombies
                     return ExecutionResult(status="timeout", output="", error="Execution timed out")
                 
                 if not stdout_data:
@@ -1029,18 +1029,24 @@ _worker_manager: Optional[WorkerManager] = None
 
 def _code_has_yield(code: str) -> bool:
     """
-    Detect if user code contains a `yield` statement.
-    Uses AST parsing to avoid false positives from comments/strings.
+    Detect if user code contains a top-level `yield` statement.
+    Uses AST parsing to avoid false positives from comments/strings
+    and from `yield` inside nested function/class definitions.
     """
     import ast
     try:
         tree = ast.parse(code)
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Yield, ast.YieldFrom)):
-                return True
+        for node in ast.iter_child_nodes(tree):
+            # Skip nested function/class definitions — yield inside those
+            # does NOT make the top-level code a generator
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            for child in ast.walk(node):
+                if isinstance(child, (ast.Yield, ast.YieldFrom)):
+                    return True
         return False
     except SyntaxError:
-        # If code won't parse, fall back to simple text check
+        # If code won't parse, fall back conservatively
         return False
 
 
@@ -1147,11 +1153,18 @@ print("__GARDENIA_VARS__:" + json.dumps(_new_vars))
     return wrapper
 
 
+# Module-level instance
+_worker_manager: Optional[WorkerManager] = None
+_worker_manager_lock = __import__('threading').Lock()
+
+
 def get_worker_manager() -> WorkerManager:
-    """Get or create the global worker manager"""
+    """Get or create the global worker manager (thread-safe)."""
     global _worker_manager
     if _worker_manager is None:
-        _worker_manager = WorkerManager()
+        with _worker_manager_lock:
+            if _worker_manager is None:
+                _worker_manager = WorkerManager()
     return _worker_manager
 
 
