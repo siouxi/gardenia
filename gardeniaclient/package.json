@@ -2,6 +2,12 @@
     "name": "gardenia-desktop",
     "private": true,
     "version": "0.1.0",
+    "description": "Gardenia Desktop Application",
+    "author": {
+        "name": "Gardenia Team",
+        "email": "contact@gardenia.app"
+    },
+    "homepage": "https://github.com/gardenia-desktop",
     "license": "Apache-2.0",
     "main": "dist-electron/main.js",
     "scripts": {
@@ -9,7 +15,41 @@
         "build": "tsc && vite build && tsc -p electron/tsconfig.json",
         "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
         "preview": "vite preview",
-        "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:5173 && tsc -p electron/tsconfig.json && electron .\""
+        "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:5173 && tsc -p electron/tsconfig.json && electron .\"",
+        "pack": "npm run build && electron-builder --dir",
+        "dist": "npm run build && electron-builder"
+    },
+    "build": {
+        "appId": "com.gardenia.desktop",
+        "productName": "Gardenia",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "dist/**/*",
+            "dist-electron/**/*",
+            "package.json"
+        ],
+        "extraResources": [
+            {
+                "from": "../engine",
+                "to": "engine",
+                "filter": [
+                    "**/*",
+                    "!.venv/**/*",
+                    "!__pycache__/**/*"
+                ]
+            }
+        ],
+        "linux": {
+            "target": [
+                "AppImage",
+                "deb",
+                "tar.gz"
+            ],
+            "icon": "public/icon.png",
+            "category": "Science"
+        }
     },
     "dependencies": {
         "@types/dagre": "^0.7.53",

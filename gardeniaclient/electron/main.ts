@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
@@ -9,6 +9,10 @@ let mainWindow: BrowserWindow | null;
 
 // Determine if we are in development mode
 const isDev = process.env.NODE_ENV === 'development';
+
+// Set AppUserModelId for Linux/Windows taskbar & dock icon support
+app.setAppUserModelId(isDev ? process.execPath : 'com.gardenia.desktop');
+app.setName('Gardenia');
 
 // ---------------------------------------------------------
 // Settings Store (Simple JSON file in userData)
@@ -230,13 +234,13 @@ const rSession = new RSessionManager();
 
 function createWindow() {
     const iconPath = isDev
-        ? path.join(__dirname, '../public/icon.svg')
-        : path.join(__dirname, '../dist/icon.svg');
+        ? path.join(__dirname, '../public/icon.png')
+        : path.join(__dirname, '../dist/icon.png');
 
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
-        icon: iconPath,
+        icon: nativeImage.createFromPath(iconPath),
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: true,
