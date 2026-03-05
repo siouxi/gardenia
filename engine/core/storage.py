@@ -84,9 +84,13 @@ class ArrowStorage:
         if base_path:
             self.base_path = Path(base_path)
         else:
-            # Default to .gardenia_data in project root
-            project_root = Path(__file__).resolve().parent.parent.parent
-            self.base_path = project_root / ".gardenia_data"
+            # Use env var if set, otherwise default to user home directory
+            # (never use __file__-relative path — it's read-only in AppImage)
+            env_path = os.environ.get("GARDENIA_DATA_DIR")
+            if env_path:
+                self.base_path = Path(env_path)
+            else:
+                self.base_path = Path.home() / ".gardenia_data"
         
         self.base_path.mkdir(parents=True, exist_ok=True)
         self._datasets: Dict[str, DatasetMetadata] = {}

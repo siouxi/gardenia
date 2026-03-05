@@ -83,16 +83,15 @@ class RSessionManager {
 
             try {
                 // Robust path resolution for r_bridge.R
-                let scriptPath = path.join(__dirname, 'r_bridge.R');
-
-                // If not found in current dir (production/dist), try dev path
+                // Check process.resourcesPath first (packaged app), then dev paths
+                const rBridgeCandidates = [
+                    path.join(process.resourcesPath, 'r_bridge.R'),
+                    path.join(__dirname, 'r_bridge.R'),
+                    path.join(__dirname, '../electron/r_bridge.R'),
+                ];
+                let scriptPath = rBridgeCandidates.find(p => fs.existsSync(p)) || rBridgeCandidates[0];
                 if (!fs.existsSync(scriptPath)) {
-                    const devPath = path.join(__dirname, '../electron/r_bridge.R');
-                    if (fs.existsSync(devPath)) {
-                        scriptPath = devPath;
-                    } else {
-                        console.error('Could not find r_bridge.R in:', scriptPath, 'or', devPath);
-                    }
+                    console.error('Could not find r_bridge.R in any of:', rBridgeCandidates);
                 }
 
                 console.log(`Using R bridge script at: ${scriptPath}`);
@@ -847,16 +846,15 @@ class PythonSessionManager {
 
             try {
                 // Robust path resolution for python_bridge.py
-                let scriptPath = path.join(__dirname, 'python_bridge.py');
-
-                // If not found in current dir (production/dist), try dev path
+                // Check process.resourcesPath first (packaged app), then dev paths
+                const pyBridgeCandidates = [
+                    path.join(process.resourcesPath, 'python_bridge.py'),
+                    path.join(__dirname, 'python_bridge.py'),
+                    path.join(__dirname, '../electron/python_bridge.py'),
+                ];
+                let scriptPath = pyBridgeCandidates.find(p => fs.existsSync(p)) || pyBridgeCandidates[0];
                 if (!fs.existsSync(scriptPath)) {
-                    const devPath = path.join(__dirname, '../electron/python_bridge.py');
-                    if (fs.existsSync(devPath)) {
-                        scriptPath = devPath;
-                    } else {
-                        console.error('Could not find python_bridge.py in:', scriptPath, 'or', devPath);
-                    }
+                    console.error('Could not find python_bridge.py in any of:', pyBridgeCandidates);
                 }
 
                 console.log(`Using Python bridge script at: ${scriptPath}`);
@@ -1014,16 +1012,17 @@ class BashSessionManager {
             console.log('Starting Bash bridge session...');
 
             try {
-                let scriptPath = path.join(__dirname, 'bash_bridge.py');
+                // Check process.resourcesPath first (packaged app), then dev paths
+                const bashBridgeCandidates = [
+                    path.join(process.resourcesPath, 'bash_bridge.py'),
+                    path.join(__dirname, 'bash_bridge.py'),
+                    path.join(__dirname, '../electron/bash_bridge.py'),
+                ];
+                let scriptPath = bashBridgeCandidates.find(p => fs.existsSync(p)) || bashBridgeCandidates[0];
                 if (!fs.existsSync(scriptPath)) {
-                    const devPath = path.join(__dirname, '../electron/bash_bridge.py');
-                    if (fs.existsSync(devPath)) {
-                        scriptPath = devPath;
-                    } else {
-                        console.error('Could not find bash_bridge.py');
-                        resolve({ success: false, error: 'Bridge script not found' });
-                        return;
-                    }
+                    console.error('Could not find bash_bridge.py in any of:', bashBridgeCandidates);
+                    resolve({ success: false, error: 'Bridge script not found' });
+                    return;
                 }
 
                 // We use the active python to run the bash bridge (since it's a python script)

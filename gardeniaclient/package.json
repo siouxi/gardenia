@@ -39,6 +39,18 @@
                     "!.venv/**/*",
                     "!__pycache__/**/*"
                 ]
+            },
+            {
+                "from": "electron/r_bridge.R",
+                "to": "r_bridge.R"
+            },
+            {
+                "from": "electron/python_bridge.py",
+                "to": "python_bridge.py"
+            },
+            {
+                "from": "electron/bash_bridge.py",
+                "to": "bash_bridge.py"
             }
         ],
         "linux": {

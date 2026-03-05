@@ -13,6 +13,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as fs from 'fs';
+import { app } from 'electron';
 import {
     Workflow,
     WorkflowExecutionState,
@@ -66,6 +67,10 @@ export class WorkflowOrchestrator extends EventEmitter {
 
                 this.pythonProcess = spawn(this.activePythonPath, ['-u', scriptPath], {
                     stdio: ['pipe', 'pipe', 'pipe'],
+                    env: {
+                        ...process.env,
+                        GARDENIA_DATA_DIR: path.join(app.getPath('userData'), 'data'),
+                    },
                 });
 
                 let buffer = '';
@@ -201,6 +206,9 @@ export class WorkflowOrchestrator extends EventEmitter {
      */
     private findOrchestratorScript(): string | null {
         const possiblePaths = [
+            // Packaged app: engine is in extraResources
+            path.join(process.resourcesPath, 'engine', 'orchestrator.py'),
+            // Dev paths
             path.join(__dirname, '../../engine/orchestrator.py'),
             path.join(__dirname, '../../../engine/orchestrator.py'),
             path.join(process.cwd(), 'engine/orchestrator.py'),
