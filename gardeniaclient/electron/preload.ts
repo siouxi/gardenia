@@ -87,6 +87,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     closeProject: () => ipcRenderer.invoke('project:close'),
     getActiveProject: () => ipcRenderer.invoke('project:get-active'),
 
+    // Folder operations
+    createFolder: (name: string, projectPaths: string[]) => ipcRenderer.invoke('project:create-folder', name, projectPaths),
+    renameFolder: (folderId: string, newName: string) => ipcRenderer.invoke('project:rename-folder', folderId, newName),
+    addProjectToFolder: (folderId: string, projectPath: string) => ipcRenderer.invoke('project:add-to-folder', folderId, projectPath),
+    removeProjectFromFolder: (folderId: string, projectPath: string) => ipcRenderer.invoke('project:remove-from-folder', folderId, projectPath),
+
     // Project opened event (sent by main process after window loads)
     onProjectOpened: (callback: (data: { meta: any; workflow: any; leafPath: string }) => void) => {
         ipcRenderer.on('project:opened', (_, data) => callback(data));

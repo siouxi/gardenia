@@ -13,6 +13,7 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import AdmZip from 'adm-zip';
 
 export interface ProjectMeta {
@@ -38,6 +39,17 @@ export interface ProjectEntry {
     edgeCount?: number;
 }
 
+export interface ProjectFolder {
+    id: string;
+    name: string;
+    projectPaths: string[];
+}
+
+export interface ProjectIndexData {
+    projects: ProjectEntry[];
+    folders: ProjectFolder[];
+}
+
 export interface ProjectData {
     meta: ProjectMeta;
     workflow: any;         // { nodes, edges, version }
@@ -61,9 +73,9 @@ export class ProjectManager {
 
     // ── Recent Projects Index ───────────────────────────────────────
 
-    getRecentProjects(): ProjectEntry[] {
+    getIndexData(): ProjectIndexData {
         try {
-            if (!fs.existsSync(this.indexPath)) return [];
+            if (!fs.existsSync(this.indexPath)) return { projects: [], folders: [] };
             const data = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8'));
             // Filter out entries whose files no longer exist
             const valid = (data.projects || []).filter((p: ProjectEntry) =>
@@ -78,10 +90,24 @@ export class ProjectManager {
                     } catch { /* ignore corrupt files */ }
                 }
             }
-            return valid;
+            // Clean up folders: remove references to missing projects
+            const folders = (data.folders || []).map((f: ProjectFolder) => ({
+                ...f,
+                projectPaths: f.projectPaths.filter((p: string) => fs.existsSync(p)),
+            })).filter((f: ProjectFolder) => f.projectPaths.length > 1);
+
+            return { projects: valid, folders };
         } catch {
-            return [];
+            return { projects: [], folders: [] };
         }
+    }
+
+    getRecentProjects(): ProjectEntry[] {
+        return this.getIndexData().projects;
+    }
+
+    getFolders(): ProjectFolder[] {
+        return this.getIndexData().folders;
     }
 
     private extractPreview(leafPath: string): Partial<ProjectEntry> {
@@ -107,10 +133,19 @@ export class ProjectManager {
         };
     }
 
-    private saveIndex(projects: ProjectEntry[]): void {
+    private saveIndex(projects: ProjectEntry[], folders?: ProjectFolder[]): void {
+        const currentFolders = folders ?? this.getFolders();
         fs.writeFileSync(
             this.indexPath,
-            JSON.stringify({ projects }, null, 2),
+            JSON.stringify({ projects, folders: currentFolders }, null, 2),
+            'utf-8',
+        );
+    }
+
+    private saveIndexData(data: ProjectIndexData): void {
+        fs.writeFileSync(
+            this.indexPath,
+            JSON.stringify(data, null, 2),
             'utf-8',
         );
     }
@@ -295,6 +330,65 @@ export class ProjectManager {
         };
         this.addToIndex(entry);
         return entry;
+    }
+
+    // ── Folder Operations ────────────────────────────────────────────
+
+    createFolder(name: string, projectPaths: string[]): ProjectFolder {
+        const folder: ProjectFolder = {
+            id: crypto.randomUUID(),
+            name,
+            projectPaths,
+        };
+        const data = this.getIndexData();
+        data.folders.push(folder);
+        this.saveIndexData(data);
+        return folder;
+    }
+
+    renameFolder(folderId: string, newName: string): ProjectFolder | null {
+        const data = this.getIndexData();
+        const folder = data.folders.find(f => f.id === folderId);
+        if (!folder) return null;
+        folder.name = newName;
+        this.saveIndexData(data);
+        return folder;
+    }
+
+    addProjectToFolder(folderId: string, projectPath: string): ProjectFolder | null {
+        const data = this.getIndexData();
+        const folder = data.folders.find(f => f.id === folderId);
+        if (!folder) return null;
+        if (!folder.projectPaths.includes(projectPath)) {
+            folder.projectPaths.push(projectPath);
+        }
+        this.saveIndexData(data);
+        return folder;
+    }
+
+    removeProjectFromFolder(folderId: string, projectPath: string): { folder: ProjectFolder | null; dissolved: boolean } {
+        const data = this.getIndexData();
+        const folderIdx = data.folders.findIndex(f => f.id === folderId);
+        if (folderIdx === -1) return { folder: null, dissolved: false };
+
+        const folder = data.folders[folderIdx];
+        folder.projectPaths = folder.projectPaths.filter(p => p !== projectPath);
+
+        // Auto-dissolve: if ≤1 project remains, remove the folder entirely
+        if (folder.projectPaths.length <= 1) {
+            data.folders.splice(folderIdx, 1);
+            this.saveIndexData(data);
+            return { folder: null, dissolved: true };
+        }
+
+        this.saveIndexData(data);
+        return { folder, dissolved: false };
+    }
+
+    deleteFolder(folderId: string): void {
+        const data = this.getIndexData();
+        data.folders = data.folders.filter(f => f.id !== folderId);
+        this.saveIndexData(data);
     }
 }
 

@@ -405,7 +405,47 @@ app.on('ready', () => {
 
     ipcMain.handle('project:list-recent', async () => {
         const pm = getProjectManager();
-        return pm.getRecentProjects();
+        return pm.getIndexData();
+    });
+
+    ipcMain.handle('project:create-folder', async (_event, name: string, projectPaths: string[]) => {
+        try {
+            const pm = getProjectManager();
+            const folder = pm.createFolder(name, projectPaths);
+            return { status: 'success', folder };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:rename-folder', async (_event, folderId: string, newName: string) => {
+        try {
+            const pm = getProjectManager();
+            const folder = pm.renameFolder(folderId, newName);
+            return { status: 'success', folder };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:add-to-folder', async (_event, folderId: string, projectPath: string) => {
+        try {
+            const pm = getProjectManager();
+            const folder = pm.addProjectToFolder(folderId, projectPath);
+            return { status: 'success', folder };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:remove-from-folder', async (_event, folderId: string, projectPath: string) => {
+        try {
+            const pm = getProjectManager();
+            const result = pm.removeProjectFromFolder(folderId, projectPath);
+            return { status: 'success', ...result };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
     });
 
     ipcMain.handle('project:get-projects-dir', async () => {
