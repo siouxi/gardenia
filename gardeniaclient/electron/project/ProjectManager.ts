@@ -96,6 +96,7 @@ export class ProjectManager {
                 x: n.position?.x ?? 0,
                 y: n.position?.y ?? 0,
                 label: n.data?.label || '',
+                type: n.type,
             })),
             edgePreview: edges.map((e: any) => ({
                 source: e.source,

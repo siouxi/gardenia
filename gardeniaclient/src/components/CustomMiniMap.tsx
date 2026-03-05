@@ -52,13 +52,15 @@ export const CustomMiniMap: React.FC<CustomMiniMapProps> = ({
         const padding = 40;
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        const nodePositions = new Map<string, { x: number; y: number; w: number; h: number }>();
+        const nodePositions = new Map<string, { x: number; y: number; w: number; h: number; type?: string }>();
 
         for (const node of nodes) {
             if (node.type === 'group') continue;
             const x = node.position.x;
             const y = node.position.y;
-            nodePositions.set(node.id, { x, y, w: nodeW, h: nodeH });
+            // Post-it nodes are usually square-ish, standard nodes are wide
+            const w = node.type === 'postit' ? nodeH * 1.5 : nodeW;
+            nodePositions.set(node.id, { x, y, w, h: nodeH, type: node.type });
             minX = Math.min(minX, x);
             minY = Math.min(minY, y);
             maxX = Math.max(maxX, x + nodeW);
@@ -81,10 +83,11 @@ export const CustomMiniMap: React.FC<CustomMiniMapProps> = ({
                     y: pos.y * scale + offsetY,
                     w: pos.w * scale,
                     h: pos.h * scale,
-                    color: getNodeColor(node),
+                    color: node.type === 'postit' ? '#fde047' : getNodeColor(node),
                     label: String(node.data?.label || ''),
                     origX: pos.x + pos.w / 2,
                     origY: pos.y + pos.h / 2,
+                    type: pos.type,
                 };
             });
 
@@ -196,36 +199,70 @@ export const CustomMiniMap: React.FC<CustomMiniMapProps> = ({
                         />
                     ))}
 
-                    {/* Nodes */}
                     {nodeRects.map((rect) => (
                         <g
                             key={rect.id}
                             style={{ cursor: 'pointer' }}
                             onClick={(e) => handleNodeClick(e, rect.origX, rect.origY)}
                         >
-                            <rect
-                                x={rect.x}
-                                y={rect.y}
-                                width={rect.w}
-                                height={rect.h}
-                                rx={3}
-                                fill={rect.color}
-                                fillOpacity={0.25}
-                                stroke={rect.color}
-                                strokeWidth={Math.max(0.5, 1 / zoom)}
-                                strokeOpacity={0.7}
-                            />
-                            {/* Hover highlight */}
-                            <rect
-                                x={rect.x}
-                                y={rect.y}
-                                width={rect.w}
-                                height={rect.h}
-                                rx={3}
-                                fill="transparent"
-                                className="hover:fill-white/10"
-                            />
-                            {/* Label — clipped to node bounds, hidden when zoomed out */}
+                            {rect.type === 'postit' ? (
+                                // Post-it rendering
+                                <g>
+                                    {/* Main post-it body with a slight drop shadow effect via opacity, and folded corner cut out */}
+                                    <polygon
+                                        points={`
+                                            ${rect.x},${rect.y}
+                                            ${rect.x + rect.w},${rect.y}
+                                            ${rect.x + rect.w},${rect.y + rect.h - 8}
+                                            ${rect.x + rect.w - 8},${rect.y + rect.h}
+                                            ${rect.x},${rect.y + rect.h}
+                                        `}
+                                        fill="#fef08a" // bright yellow
+                                        stroke="#ca8a04" // darker yellow border
+                                        strokeWidth={Math.max(0.5, 1 / zoom)}
+                                    />
+                                    {/* The folded corner itself */}
+                                    <polygon
+                                        points={`
+                                            ${rect.x + rect.w},${rect.y + rect.h - 8} 
+                                            ${rect.x + rect.w - 8},${rect.y + rect.h - 8} 
+                                            ${rect.x + rect.w - 8},${rect.y + rect.h}
+                                        `}
+                                        fill="#eab308" // shaded yellow for fold
+                                        stroke="#ca8a04"
+                                        strokeWidth={Math.max(0.5, 1 / zoom)}
+                                        strokeLinejoin="round"
+                                    />
+                                </g>
+                            ) : (
+                                // Standard node rendering
+                                <>
+                                    <rect
+                                        x={rect.x}
+                                        y={rect.y}
+                                        width={rect.w}
+                                        height={rect.h}
+                                        rx={3}
+                                        fill={rect.color}
+                                        fillOpacity={0.25}
+                                        stroke={rect.color}
+                                        strokeWidth={Math.max(0.5, 1 / zoom)}
+                                        strokeOpacity={0.7}
+                                    />
+                                    {/* Hover highlight */}
+                                    <rect
+                                        x={rect.x}
+                                        y={rect.y}
+                                        width={rect.w}
+                                        height={rect.h}
+                                        rx={3}
+                                        fill="transparent"
+                                        className="hover:fill-white/10"
+                                    />
+                                </>
+                            )}
+
+                            {/* Label */}
                             {showLabels && (
                                 <>
                                     <clipPath id={`clip-${rect.id}`}>
@@ -235,6 +272,9 @@ export const CustomMiniMap: React.FC<CustomMiniMapProps> = ({
                                         const fontSize = Math.min(7, rect.h * 0.5);
                                         const estTextW = rect.label.length * fontSize * 0.6;
                                         const isLong = estTextW > rect.w * 0.85;
+                                        const isPostIt = rect.type === 'postit';
+                                        if (isPostIt) return null; // No text on post-its in the minimap
+
                                         return (
                                             <text
                                                 x={isLong ? rect.x + 3 : rect.x + rect.w / 2}

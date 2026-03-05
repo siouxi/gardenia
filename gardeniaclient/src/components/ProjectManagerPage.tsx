@@ -13,6 +13,7 @@ interface NodePreviewItem {
     x: number;
     y: number;
     label: string;
+    type?: string;
 }
 
 interface ProjectEntry {
@@ -85,28 +86,62 @@ function WorkflowPreview({ nodes }: { nodes?: NodePreviewItem[] }) {
             {nodes.map((node, i) => {
                 const nx = padding + ((node.x - minX) / rangeX) * (100 - padding * 2);
                 const ny = padding + ((node.y - minY) / rangeY) * (100 - padding * 2);
+                const isPostIt = node.type === 'postit';
+
                 return (
                     <g key={i}>
-                        <rect
-                            x={nx - 8}
-                            y={ny - 4}
-                            width={16}
-                            height={8}
-                            rx={2}
-                            fill="rgba(52, 211, 153, 0.25)"
-                            stroke="rgba(52, 211, 153, 0.5)"
-                            strokeWidth={0.5}
-                        />
-                        <text
-                            x={nx}
-                            y={ny + 1.5}
-                            textAnchor="middle"
-                            fontSize={3}
-                            fill="rgba(52, 211, 153, 0.7)"
-                            fontFamily="Inter, sans-serif"
-                        >
-                            {node.label.length > 8 ? node.label.slice(0, 7) + '…' : node.label}
-                        </text>
+                        {isPostIt ? (
+                            <g>
+                                <polygon
+                                    points={`
+                                        ${nx - 8},${ny - 8}
+                                        ${nx + 8},${ny - 8}
+                                        ${nx + 8},${ny + 4}
+                                        ${nx + 4},${ny + 8}
+                                        ${nx - 8},${ny + 8}
+                                    `}
+                                    fill="#fef08a"
+                                    stroke="#ca8a04"
+                                    strokeWidth={0.5}
+                                />
+                                <polygon
+                                    points={`
+                                        ${nx + 8},${ny + 4} 
+                                        ${nx + 4},${ny + 4} 
+                                        ${nx + 4},${ny + 8}
+                                    `}
+                                    fill="#eab308"
+                                    stroke="#ca8a04"
+                                    strokeWidth={0.5}
+                                    strokeLinejoin="round"
+                                />
+                            </g>
+                        ) : (
+                            <rect
+                                x={nx - 8}
+                                y={ny - 4}
+                                width={16}
+                                height={8}
+                                rx={2}
+                                fill="rgba(52, 211, 153, 0.25)"
+                                stroke="rgba(52, 211, 153, 0.5)"
+                                strokeWidth={0.5}
+                            />
+                        )}
+                        {!isPostIt && (
+                            <text
+                                x={nx}
+                                y={ny + 1.5}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fontSize={3}
+                                fill="rgba(52, 211, 153, 0.7)"
+                                fontFamily="Inter, sans-serif"
+                                fontWeight="400"
+                            >
+                                {node.label.length > 8 ? node.label.slice(0, 7) + '…' : node.label}
+                            </text>
+                        )}
                     </g>
                 );
             })}
