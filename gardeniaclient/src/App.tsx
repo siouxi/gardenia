@@ -10,6 +10,7 @@ import { GardeniasLogo } from './components/GardeniasLogo';
 import { ResolveNode } from './components/ResolveNode';
 import { PostItNode } from './components/PostItNode';
 import { CodeEditor } from './components/CodeEditor';
+import { ReportView } from './components/ReportView';
 import { NodeContextMenu } from './components/NodeContextMenu';
 import { CustomMiniMap } from './components/CustomMiniMap';
 import { StreamEdge } from './components/StreamEdge';
@@ -1290,7 +1291,10 @@ const Flow = () => {
                     >
                         CODE
                     </button>
-                    <button className="px-3 py-0.5 text-[11px] font-medium bg-[#d97706] text-black rounded-[2px] shadow-sm">REPORT</button>
+                    <button
+                        onClick={() => setViewMode('report')}
+                        className={`px-3 py-0.5 text-[11px] font-medium rounded-[2px] shadow-sm transition-colors ${viewMode === 'report' ? 'bg-[#d97706] text-black' : 'bg-transparent text-[#888] hover:bg-[#222]'}`}
+                    >REPORT</button>
                 </div>
 
                 <div className="flex items-center gap-4 z-10">
@@ -1440,6 +1444,10 @@ const Flow = () => {
                                 onUpdate={updateNodeData}
                             />
                         </div>
+                    )}
+
+                    {viewMode === 'report' && (
+                        <ReportView />
                     )}
 
 

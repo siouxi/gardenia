@@ -149,3 +149,10 @@ env/
 .Rhistory
 .RData
 .Ruserdata
+
+
+#PDF
+
+gardenia_report.pdf
+
+#latex

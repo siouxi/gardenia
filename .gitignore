@@ -24,3 +24,11 @@ Thumbs.db
 
 # Build
 *.log
+
+#PDF
+
+gardenia_report.pdf
+
+#latex
+
+gardenia_report.tex
