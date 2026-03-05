@@ -74,4 +74,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     executeBashCommand: (command: string) => ipcRenderer.invoke('execute-bash-command', command),
     stopBashSession: () => ipcRenderer.invoke('stop-bash-session'),
     getBashSessionStatus: () => ipcRenderer.invoke('get-bash-session-status'),
+
+    // ── Project Manager APIs ──────────────────────────────────────
+    listRecentProjects: () => ipcRenderer.invoke('project:list-recent'),
+    getProjectsDir: () => ipcRenderer.invoke('project:get-projects-dir'),
+    createProject: (name: string, directory?: string) => ipcRenderer.invoke('project:create', name, directory),
+    openProject: (leafPath?: string) => ipcRenderer.invoke('project:open', leafPath),
+    saveProject: (workflow: any) => ipcRenderer.invoke('project:save', workflow),
+    saveProjectAs: (workflow: any) => ipcRenderer.invoke('project:save-as', workflow),
+    deleteProject: (leafPath: string) => ipcRenderer.invoke('project:delete', leafPath),
+    renameProject: (leafPath: string, newName: string) => ipcRenderer.invoke('project:rename', leafPath, newName),
+    closeProject: () => ipcRenderer.invoke('project:close'),
+    getActiveProject: () => ipcRenderer.invoke('project:get-active'),
+
+    // Project opened event (sent by main process after window loads)
+    onProjectOpened: (callback: (data: { meta: any; workflow: any; leafPath: string }) => void) => {
+        ipcRenderer.on('project:opened', (_, data) => callback(data));
+    },
 });
+

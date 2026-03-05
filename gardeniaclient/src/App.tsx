@@ -22,7 +22,8 @@ import { exportToJson, importFromJson } from './utils/fileHandler';
 import { getLayoutedElements } from './utils/layout';
 import { validateWorkflowLibraries, installMissingLibraries } from './utils/LibraryValidator';
 import { useWorkflowStore, initWorkflowEventListeners } from './stores/workflowStore';
-import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings } from 'lucide-react';
+import { useProjectStore } from './stores/projectStore';
+import { Download, Upload, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Save, X } from 'lucide-react';
 import { ProgressBar } from './components/ProgressBar';
 import { useUndoRedo } from './hooks/useUndoRedo';
 import { DataView } from './components/DataView';
@@ -111,19 +112,30 @@ const Flow = () => {
     // Attach global listeners
     // Moved below useNodesState
 
-    // --- Workflow Auto-Persistence ---
+    // --- Project-aware persistence ---
+    const projectData = useProjectStore((s) => s.projectWorkflow);
+    const activeProject = useProjectStore((s) => s.activeProject);
+    const markModified = useProjectStore((s) => s.markModified);
+    const markSaved = useProjectStore((s) => s.markSaved);
+
     const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved');
     const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isInitialized = useRef(false);
 
-    // Restore from localStorage on mount
+    // Restore from project data (sent by main process) or fallback to localStorage
     const getInitialNodes = (): AppNode[] => {
+        // If project data was loaded via IPC, use it
+        if (projectData?.nodes?.length > 0) {
+            console.log(`[Project] Loaded ${projectData.nodes.length} nodes from project`);
+            return projectData.nodes;
+        }
+        // Fallback: localStorage crash recovery
         try {
             const saved = localStorage.getItem('gardenia:autosave');
             if (saved) {
                 const data = JSON.parse(saved);
                 if (data.nodes?.length > 0) {
-                    console.log(`[AutoSave] Restored ${data.nodes.length} nodes, ${data.edges?.length || 0} edges`);
+                    console.log(`[AutoSave] Restored ${data.nodes.length} nodes`);
                     return data.nodes;
                 }
             }
@@ -134,6 +146,7 @@ const Flow = () => {
     };
 
     const getInitialEdges = () => {
+        if (projectData?.edges) return projectData.edges;
         try {
             const saved = localStorage.getItem('gardenia:autosave');
             if (saved) {
@@ -146,6 +159,19 @@ const Flow = () => {
 
     const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(getInitialNodes());
     const [edges, setEdges, onEdgesChange] = useEdgesState(getInitialEdges());
+
+    // Listen for project:opened from main process
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (!api?.onProjectOpened) return;
+        api.onProjectOpened((data: { meta: any; workflow: any; leafPath: string }) => {
+            const { openProject } = useProjectStore.getState();
+            openProject(data.meta, data.leafPath, data.workflow);
+            // Reload nodes/edges from the project
+            if (data.workflow?.nodes) setNodes(data.workflow.nodes as AppNode[]);
+            if (data.workflow?.edges) setEdges(data.workflow.edges);
+        });
+    }, [setNodes, setEdges]);
 
     // Undo/Redo hook
     const { pushSnapshot, undo, redo, canUndo, canRedo, past } = useUndoRedo();
@@ -167,32 +193,76 @@ const Flow = () => {
         }
     }, [nodes, edges, redo, setNodes, setEdges]);
 
-    // Auto-save to localStorage on changes (debounced 1s)
+    // Auto-save: write to .leaf project file (debounced 2s)
     useEffect(() => {
         if (!isInitialized.current) {
             isInitialized.current = true;
-            return; // Skip first render (it's the restore)
+            return; // Skip first render
         }
         setSaveStatus('unsaved');
+        markModified();
         if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-        autoSaveTimer.current = setTimeout(() => {
+        autoSaveTimer.current = setTimeout(async () => {
+            const saveData = {
+                nodes: nodes.map(n => ({
+                    ...n,
+                    data: { ...n.data, executionState: undefined },
+                })),
+                edges,
+                version: '1.0.0',
+            };
+
+            // Save to .leaf project file if active
+            const api = (window as any).electronAPI;
+            if (api?.saveProject && activeProject) {
+                try {
+                    await api.saveProject(saveData);
+                    setSaveStatus('saved');
+                    markSaved();
+                } catch (e) {
+                    console.warn('[Project] Failed to auto-save:', e);
+                }
+            }
+
+            // Also keep localStorage as crash recovery backup
             try {
+                localStorage.setItem('gardenia:autosave', JSON.stringify({
+                    ...saveData,
+                    savedAt: new Date().toISOString(),
+                }));
+            } catch (e) { /* ignore */ }
+        }, 2000);
+        return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+    }, [nodes, edges]);
+
+    // Ctrl+S manual save shortcut
+    useEffect(() => {
+        const onSaveKey = async (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                const api = (window as any).electronAPI;
+                if (!api?.saveProject || !activeProject) return;
+                setSaveStatus('saving');
                 const saveData = {
                     nodes: nodes.map(n => ({
                         ...n,
                         data: { ...n.data, executionState: undefined },
                     })),
                     edges,
-                    savedAt: new Date().toISOString(),
+                    version: '1.0.0',
                 };
-                localStorage.setItem('gardenia:autosave', JSON.stringify(saveData));
-                setSaveStatus('saved');
-            } catch (e) {
-                console.warn('[AutoSave] Failed to save:', e);
+                try {
+                    await api.saveProject(saveData);
+                    setSaveStatus('saved');
+                    markSaved();
+                } catch (e) {
+                    console.warn('[Save] Failed:', e);
+                }
             }
-        }, 1000);
-        return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-    }, [nodes, edges]);
+        };
+        window.addEventListener('keydown', onSaveKey);
+        return () => window.removeEventListener('keydown', onSaveKey);
+    }, [nodes, edges, activeProject]);
 
     // Undo/Redo keyboard shortcuts - always active
     useEffect(() => {
@@ -1017,6 +1087,47 @@ const Flow = () => {
                             <div className="absolute top-full left-0 mt-1 w-48 bg-[#2a2a2a] border border-[#333] rounded-md shadow-xl py-1 z-50 flex flex-col">
                                 <button
                                     className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2"
+                                    onClick={async () => {
+                                        const api = (window as any).electronAPI;
+                                        if (api?.saveProject && activeProject) {
+                                            setSaveStatus('saving');
+                                            const saveData = {
+                                                nodes: nodes.map(n => ({ ...n, data: { ...n.data, executionState: undefined } })),
+                                                edges,
+                                                version: '1.0.0',
+                                            };
+                                            await api.saveProject(saveData);
+                                            setSaveStatus('saved');
+                                            markSaved();
+                                        }
+                                        setIsFileMenuOpen(false);
+                                    }}
+                                >
+                                    <Save className="w-3.5 h-3.5" />
+                                    Save Project
+                                    <span className="ml-auto text-[10px] text-[#666]">Ctrl+S</span>
+                                </button>
+                                <button
+                                    className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2"
+                                    onClick={async () => {
+                                        const api = (window as any).electronAPI;
+                                        if (api?.saveProjectAs) {
+                                            const saveData = {
+                                                nodes: nodes.map(n => ({ ...n, data: { ...n.data, executionState: undefined } })),
+                                                edges,
+                                                version: '1.0.0',
+                                            };
+                                            await api.saveProjectAs(saveData);
+                                        }
+                                        setIsFileMenuOpen(false);
+                                    }}
+                                >
+                                    <Save className="w-3.5 h-3.5" />
+                                    Save As...
+                                </button>
+                                <div className="h-[1px] bg-[#333] my-1" />
+                                <button
+                                    className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2"
                                     onClick={() => {
                                         onImport();
                                         setIsFileMenuOpen(false);
@@ -1045,6 +1156,20 @@ const Flow = () => {
                                 >
                                     <Settings className="w-3.5 h-3.5" />
                                     Preferences
+                                </button>
+                                <div className="h-[1px] bg-[#333] my-1" />
+                                <button
+                                    className="px-4 py-2 text-xs text-left hover:bg-[#3e3e3e] flex items-center gap-2 text-red-400"
+                                    onClick={async () => {
+                                        const api = (window as any).electronAPI;
+                                        if (api?.closeProject) {
+                                            await api.closeProject();
+                                        }
+                                        setIsFileMenuOpen(false);
+                                    }}
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                    Close Project
                                 </button>
                             </div>
                         </>
@@ -1414,7 +1539,19 @@ const Flow = () => {
                         </div>
 
                         {/* Footer */}
-                        <div className="flex justify-end px-6 py-3">
+                        <div className="flex justify-between px-6 py-3">
+                            <button
+                                onClick={async () => {
+                                    const api = (window as any).electronAPI;
+                                    if (api?.closeProject) {
+                                        await api.closeProject();
+                                    }
+                                }}
+                                className="px-4 py-2 bg-transparent hover:bg-red-500/10 text-red-400 hover:text-red-300 rounded text-sm transition-colors border border-red-500/20 hover:border-red-500/40 flex items-center gap-2"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                                Back to Project Manager
+                            </button>
                             <button
                                 onClick={() => setIsPreferencesOpen(false)}
                                 className="px-4 py-2 bg-[#333] hover:bg-[#444] text-[#ccc] rounded text-sm transition-colors border border-[#444] hover:border-[#555]"

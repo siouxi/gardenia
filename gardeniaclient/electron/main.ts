@@ -4,8 +4,11 @@ import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import { getOrchestrator, WorkflowOrchestrator } from './orchestrator/Orchestrator';
 import { detectPythonPath, detectRPath, verifyExecutable } from './utils/envDetector';
+import { getProjectManager, ProjectData, ProjectMeta } from './project/ProjectManager';
 
 let mainWindow: BrowserWindow | null;
+let projectManagerWindow: BrowserWindow | null;
+let activeProject: ProjectData | null = null;
 
 // Determine if we are in development mode
 const isDev = process.env.NODE_ENV === 'development';
@@ -248,17 +251,104 @@ function createWindow() {
         // Emerald theme dark background color to avoid white flash
         backgroundColor: '#020617',
         autoHideMenuBar: true,
+        show: false,
     });
 
     if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
-        mainWindow.webContents.openDevTools();
     } else {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 
     mainWindow.on('closed', () => {
         mainWindow = null;
+        activeProject = null;
+    });
+
+    // Send project data once the page is ready
+    mainWindow.webContents.on('did-finish-load', () => {
+        if (activeProject) {
+            mainWindow?.webContents.send('project:opened', {
+                meta: activeProject.meta,
+                workflow: activeProject.workflow,
+                leafPath: activeProject.leafPath,
+            });
+        }
+        mainWindow?.show();
+    });
+}
+
+function showProjectManager() {
+    const iconPath = isDev
+        ? path.join(__dirname, '../public/icon.png')
+        : path.join(__dirname, '../dist/icon.png');
+
+    projectManagerWindow = new BrowserWindow({
+        width: 900,
+        height: 600,
+        icon: nativeImage.createFromPath(iconPath),
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js'),
+        },
+        backgroundColor: '#0f0f14',
+        autoHideMenuBar: true,
+        title: 'Gardenia — Projects',
+        resizable: true,
+        minimizable: true,
+    });
+
+    if (isDev) {
+        projectManagerWindow.loadURL('http://localhost:5173/#/projects');
+    } else {
+        projectManagerWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+            hash: '/projects',
+        });
+    }
+
+    projectManagerWindow.on('closed', () => {
+        projectManagerWindow = null;
+    });
+}
+
+function openProjectAndLaunchMain(projectData: ProjectData) {
+    activeProject = projectData;
+
+    // Close project manager
+    if (projectManagerWindow) {
+        projectManagerWindow.close();
+        projectManagerWindow = null;
+    }
+
+    // Open main window
+    createWindow();
+
+    // Start orchestrator
+    const orchestrator = getOrchestrator(activePythonPath);
+    orchestrator.start().then((ready) => {
+        if (ready) {
+            console.log('DAG Orchestrator started successfully');
+        } else {
+            console.warn('DAG Orchestrator failed to start');
+        }
+    });
+
+    // Forward orchestrator events to renderer
+    orchestrator.on('nodeStateChange', (nodeId: string, state: string) => {
+        mainWindow?.webContents.send('workflow:node-state', { nodeId, state });
+    });
+    orchestrator.on('nodeOutput', (nodeId: string, output: string) => {
+        mainWindow?.webContents.send('workflow:node-output', { nodeId, output });
+    });
+    orchestrator.on('nodeVariables', (nodeId: string, variables: string[]) => {
+        mainWindow?.webContents.send('workflow:node-variables', { nodeId, variables });
+    });
+    orchestrator.on('executionOrder', (order: string[], labels: string[]) => {
+        mainWindow?.webContents.send('workflow:execution-order', { order, labels });
+    });
+    orchestrator.on('executionComplete', (result: any) => {
+        mainWindow?.webContents.send('workflow:complete', result);
     });
 }
 
@@ -308,7 +398,136 @@ app.on('ready', () => {
     console.log(`[Startup] Active Python Path: ${activePythonPath}`);
     console.log(`[Startup] Active R Path: ${activeRPath}`);
 
-    createWindow();
+    // Show project manager first — main window opens when a project is selected
+    showProjectManager();
+
+    // ── Project Manager IPC handlers ──────────────────────────────
+
+    ipcMain.handle('project:list-recent', async () => {
+        const pm = getProjectManager();
+        return pm.getRecentProjects();
+    });
+
+    ipcMain.handle('project:get-projects-dir', async () => {
+        return getProjectManager().getProjectsDir();
+    });
+
+    ipcMain.handle('project:create', async (_event, name: string, directory?: string) => {
+        try {
+            const pm = getProjectManager();
+            const projectData = pm.createProject(name, directory);
+            openProjectAndLaunchMain(projectData);
+            return { status: 'success', meta: projectData.meta, leafPath: projectData.leafPath };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:open', async (_event, leafPath?: string) => {
+        try {
+            let targetPath = leafPath;
+
+            if (!targetPath) {
+                // Show file dialog
+                const result = await dialog.showOpenDialog(projectManagerWindow || mainWindow!, {
+                    filters: [{ name: 'Gardenia Project', extensions: ['leaf'] }],
+                    properties: ['openFile'],
+                });
+                if (result.canceled || result.filePaths.length === 0) {
+                    return { status: 'cancelled' };
+                }
+                targetPath = result.filePaths[0];
+            }
+
+            const pm = getProjectManager();
+            const projectData = pm.openProject(targetPath);
+            openProjectAndLaunchMain(projectData);
+            return { status: 'success', meta: projectData.meta, leafPath: projectData.leafPath };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:save', async (_event, workflow: any) => {
+        try {
+            if (!activeProject) return { status: 'error', error: 'No active project' };
+            const pm = getProjectManager();
+            pm.saveProject(activeProject.leafPath, workflow, activeProject.meta);
+            activeProject.meta.modifiedAt = new Date().toISOString();
+            return { status: 'success' };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:save-as', async (_event, workflow: any) => {
+        try {
+            if (!activeProject) return { status: 'error', error: 'No active project' };
+
+            const result = await dialog.showSaveDialog(mainWindow!, {
+                defaultPath: activeProject.leafPath,
+                filters: [{ name: 'Gardenia Project', extensions: ['leaf'] }],
+            });
+            if (result.canceled || !result.filePath) return { status: 'cancelled' };
+
+            const pm = getProjectManager();
+            const updatedMeta = pm.saveProjectAs(result.filePath, workflow, activeProject.meta);
+            activeProject = { ...activeProject, leafPath: result.filePath, meta: updatedMeta };
+            return { status: 'success', leafPath: result.filePath };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:delete', async (_event, leafPath: string) => {
+        try {
+            const pm = getProjectManager();
+            pm.deleteProject(leafPath);
+            return { status: 'success' };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:rename', async (_event, leafPath: string, newName: string) => {
+        try {
+            const pm = getProjectManager();
+            const entry = pm.renameProject(leafPath, newName);
+            return { status: 'success', entry };
+        } catch (error) {
+            return { status: 'error', error: String(error) };
+        }
+    });
+
+    ipcMain.handle('project:close', async () => {
+        // Stop orchestrator
+        try {
+            const orchestrator = getOrchestrator(activePythonPath);
+            orchestrator.stop();
+        } catch { /* ignore */ }
+
+        activeProject = null;
+
+        // Close main window
+        if (mainWindow) {
+            mainWindow.close();
+            mainWindow = null;
+        }
+
+        // Re-open project manager
+        showProjectManager();
+        return { status: 'success' };
+    });
+
+    ipcMain.handle('project:get-active', async () => {
+        if (!activeProject) return null;
+        return {
+            meta: activeProject.meta,
+            leafPath: activeProject.leafPath,
+        };
+    });
+
+    // ── Workflow IPC handlers ──────────────────────────────────────
 
     ipcMain.handle('run-workflow', async (event, workflowData) => {
         console.log('Received workflow:', workflowData);
@@ -334,24 +553,13 @@ app.on('ready', () => {
         // Standard execution flow - Execute in the persistent session
         try {
             console.log('Executing workflow in persistent session');
-
-            // 1. Announce start
             await pythonSession.executeCommand('print("\\n[System] Initializing workflow engine...")');
-
-            // 2. Pass workflow data (mocking the handoff for now)
-            // In a real scenario, we would serialize nodes/edges to a JSON string or Python dict
             const nodeCount = nodes.length;
             const edgeCount = edges.length;
-
             await pythonSession.executeCommand(`print("Loaded workflow with ${nodeCount} nodes and ${edgeCount} connections.")`);
-
-            // 3. Simulate execution step by step (placeholder)
             await pythonSession.executeCommand('print("Validating graph topology... OK")');
             await pythonSession.executeCommand('print("Starting execution...")');
-
-            // Simulate a small delay or just print completion
             await pythonSession.executeCommand('print("Workflow execution completed successfully.")');
-
             return { status: 'success', output: 'Workflow started in session' };
         } catch (error) {
             console.error('Workflow execution error:', error);
@@ -361,36 +569,6 @@ app.on('ready', () => {
 
     // NEW: DAG-based workflow execution handlers
     const orchestrator = getOrchestrator(activePythonPath);
-
-    // Start orchestrator when app is ready
-    orchestrator.start().then((ready) => {
-        if (ready) {
-            console.log('DAG Orchestrator started successfully');
-        } else {
-            console.warn('DAG Orchestrator failed to start');
-        }
-    });
-
-    // Forward orchestrator events to renderer
-    orchestrator.on('nodeStateChange', (nodeId: string, state: string) => {
-        mainWindow?.webContents.send('workflow:node-state', { nodeId, state });
-    });
-
-    orchestrator.on('nodeOutput', (nodeId: string, output: string) => {
-        mainWindow?.webContents.send('workflow:node-output', { nodeId, output });
-    });
-
-    orchestrator.on('nodeVariables', (nodeId: string, variables: string[]) => {
-        mainWindow?.webContents.send('workflow:node-variables', { nodeId, variables });
-    });
-
-    orchestrator.on('executionOrder', (order: string[], labels: string[]) => {
-        mainWindow?.webContents.send('workflow:execution-order', { order, labels });
-    });
-
-    orchestrator.on('executionComplete', (result: any) => {
-        mainWindow?.webContents.send('workflow:complete', result);
-    });
 
     // New IPC handler for DAG execution
     ipcMain.handle('workflow:execute', async (event, workflowData) => {
@@ -1130,7 +1308,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-    if (mainWindow === null) {
-        createWindow();
+    if (!mainWindow && !projectManagerWindow) {
+        showProjectManager();
     }
 });
+
