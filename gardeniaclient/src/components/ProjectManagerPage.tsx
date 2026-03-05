@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, FolderOpen, Trash2, Clock } from 'lucide-react';
+import { Plus, FolderOpen, Trash2, Clock, Pencil } from 'lucide-react';
 
 interface NodePreviewItem {
     x: number;
@@ -119,6 +119,8 @@ export function ProjectManagerPage() {
     const [isCreating, setIsCreating] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectEntry } | null>(null);
+    const [renamingPath, setRenamingPath] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState('');
     const api = (window as any).electronAPI;
 
     // Load recent projects
@@ -154,6 +156,13 @@ export function ProjectManagerPage() {
         loadProjects();
     };
 
+    const handleRename = async (leafPath: string) => {
+        if (!renameValue.trim()) { setRenamingPath(null); return; }
+        await api.renameProject(leafPath, renameValue.trim());
+        setRenamingPath(null);
+        loadProjects();
+    };
+
     const formatDate = (iso: string) => {
         try {
             const d = new Date(iso);
@@ -184,7 +193,6 @@ export function ProjectManagerPage() {
                 fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
                 color: '#e0e0e0',
                 overflow: 'hidden',
-                userSelect: 'none',
             }}
         >
             {/* Header */}
@@ -430,19 +438,46 @@ export function ProjectManagerPage() {
                                     background: 'rgba(0,0,0,0.2)',
                                 }}
                             >
-                                <div
-                                    style={{
-                                        fontSize: '13px',
-                                        fontWeight: 600,
-                                        color: '#ddd',
-                                        marginBottom: '4px',
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                    }}
-                                >
-                                    {project.name}
-                                </div>
+                                {renamingPath === project.path ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={renameValue}
+                                        onChange={(e) => setRenameValue(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            e.stopPropagation();
+                                            if (e.key === 'Enter') handleRename(project.path);
+                                            if (e.key === 'Escape') setRenamingPath(null);
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onBlur={() => handleRename(project.path)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '4px 8px',
+                                            background: 'rgba(0,0,0,0.5)',
+                                            border: '1px solid rgba(52, 211, 153, 0.4)',
+                                            borderRadius: '4px',
+                                            color: '#fff',
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            outline: 'none',
+                                        }}
+                                    />
+                                ) : (
+                                    <div
+                                        style={{
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            color: '#ddd',
+                                            marginBottom: '4px',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                        }}
+                                    >
+                                        {project.name}
+                                    </div>
+                                )}
                                 <div
                                     style={{
                                         display: 'flex',
@@ -530,6 +565,32 @@ export function ProjectManagerPage() {
                         >
                             <FolderOpen size={14} />
                             Open Project
+                        </button>
+                        <button
+                            onClick={() => {
+                                setRenameValue(contextMenu.project.name);
+                                setRenamingPath(contextMenu.project.path);
+                                setContextMenu(null);
+                            }}
+                            style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                background: 'transparent',
+                                border: 'none',
+                                borderRadius: '6px',
+                                color: '#ccc',
+                                fontSize: '12px',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                            <Pencil size={14} />
+                            Rename Project
                         </button>
                         <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
                         <button
