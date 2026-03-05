@@ -231,20 +231,27 @@ export const CustomMiniMap: React.FC<CustomMiniMapProps> = ({
                                     <clipPath id={`clip-${rect.id}`}>
                                         <rect x={rect.x + 2} y={rect.y} width={rect.w - 4} height={rect.h} />
                                     </clipPath>
-                                    <text
-                                        x={rect.x + 3}
-                                        y={rect.y + rect.h / 2 + 1}
-                                        textAnchor="start"
-                                        dominantBaseline="middle"
-                                        fill="#ddd"
-                                        fontSize={Math.min(7, rect.h * 0.5)}
-                                        fontFamily="ui-monospace, monospace"
-                                        fontWeight="600"
-                                        clipPath={`url(#clip-${rect.id})`}
-                                        style={{ pointerEvents: 'none' }}
-                                    >
-                                        {rect.label}
-                                    </text>
+                                    {(() => {
+                                        const fontSize = Math.min(7, rect.h * 0.5);
+                                        const estTextW = rect.label.length * fontSize * 0.6;
+                                        const isLong = estTextW > rect.w * 0.85;
+                                        return (
+                                            <text
+                                                x={isLong ? rect.x + 3 : rect.x + rect.w / 2}
+                                                y={rect.y + rect.h / 2 + 1}
+                                                textAnchor={isLong ? 'start' : 'middle'}
+                                                dominantBaseline="middle"
+                                                fill="#ddd"
+                                                fontSize={fontSize}
+                                                fontFamily="ui-monospace, monospace"
+                                                fontWeight="600"
+                                                clipPath={`url(#clip-${rect.id})`}
+                                                style={{ pointerEvents: 'none' }}
+                                            >
+                                                {rect.label}
+                                            </text>
+                                        );
+                                    })()}
                                 </>
                             )}
                         </g>

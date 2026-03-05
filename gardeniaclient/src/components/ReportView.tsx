@@ -125,7 +125,7 @@ const DEFAULT_LATEX = [
 
 export function ReportView() {
     const [latex, setLatex] = useState(DEFAULT_LATEX);
-    const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+    const [mode, setMode] = useState<'edit' | 'preview'>('preview');
     const [copied, setCopied] = useState(false);
 
     const lineCount = useMemo(() => latex.split('\n').length, [latex]);

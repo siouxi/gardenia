@@ -121,6 +121,7 @@ export function ProjectManagerPage() {
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectEntry } | null>(null);
     const [renamingPath, setRenamingPath] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
+    const [deletingPath, setDeletingPath] = useState<string | null>(null);
     const api = (window as any).electronAPI;
 
     // Load recent projects
@@ -151,9 +152,10 @@ export function ProjectManagerPage() {
     };
 
     const handleDelete = async (leafPath: string) => {
-        if (!confirm('Are you sure you want to delete this project?')) return;
         await api.deleteProject(leafPath);
+        setDeletingPath(null);
         loadProjects();
+        window.focus();
     };
 
     const handleRename = async (leafPath: string) => {
@@ -425,9 +427,62 @@ export function ProjectManagerPage() {
                                     background: 'linear-gradient(135deg, rgba(5, 10, 15, 0.5), rgba(10, 15, 20, 0.3))',
                                     padding: '4px',
                                     overflow: 'hidden',
+                                    position: 'relative',
                                 }}
                             >
                                 <WorkflowPreview nodes={project.nodePreview} />
+
+                                {/* Delete confirmation overlay */}
+                                {deletingPath === project.path && (
+                                    <div
+                                        onClick={(e) => e.stopPropagation()}
+                                        style={{
+                                            position: 'absolute',
+                                            inset: 0,
+                                            background: 'rgba(0,0,0,0.85)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '12px',
+                                            borderRadius: '12px 12px 0 0',
+                                        }}
+                                    >
+                                        <Trash2 size={20} style={{ color: '#f87171' }} />
+                                        <span style={{ fontSize: '12px', color: '#ccc' }}>Delete this project?</span>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDelete(project.path); }}
+                                                style={{
+                                                    padding: '5px 14px',
+                                                    background: '#dc2626',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                    color: '#fff',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                }}
+                                            >
+                                                Delete
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setDeletingPath(null); }}
+                                                style={{
+                                                    padding: '5px 14px',
+                                                    background: 'rgba(255,255,255,0.08)',
+                                                    border: '1px solid rgba(255,255,255,0.15)',
+                                                    borderRadius: '6px',
+                                                    color: '#aaa',
+                                                    fontSize: '11px',
+                                                    cursor: 'pointer',
+                                                }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Info bar */}
@@ -595,7 +650,7 @@ export function ProjectManagerPage() {
                         <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
                         <button
                             onClick={() => {
-                                handleDelete(contextMenu.project.path);
+                                setDeletingPath(contextMenu.project.path);
                                 setContextMenu(null);
                             }}
                             style={{
