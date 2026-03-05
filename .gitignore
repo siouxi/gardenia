@@ -1,34 +1,97 @@
-# Python
+# ── Python ────────────────────────────────────────────────
 __pycache__/
 *.pyc
-.venv/
-venv/
+*.py[cod]
+*$py.class
 *.egg-info/
+venv/
+.venv/
+env/
 
-# Node
+# ── Node / JS ─────────────────────────────────────────────
 node_modules/
+jspm_packages/
+*.tsbuildinfo
+.npm
+.eslintcache
+.node_repl_history
+*.tgz
+.yarn-integrity
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ── Logs ──────────────────────────────────────────────────
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ── Runtime ───────────────────────────────────────────────
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# ── Build / Dist ──────────────────────────────────────────
 dist/
 dist-electron/
+release/
+build/
+out/
+lib-cov
+coverage
+*.lcov
+.nyc_output
 
-#Storage
-.gardenia_data/
+# ── Bundler Caches ────────────────────────────────────────
+.cache
+.parcel-cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.fusebox/
+.next
+.nuxt
+.vuepress/dist
+.serverless/
 
-# IDE
+# ── Env / Secrets ─────────────────────────────────────────
+.env
+.env.*
+*.env
+*.env.*
+
+# ── IDE / Editor ──────────────────────────────────────────
 .idea/
 .vscode/
+.vscode-test
 *.swp
+.tern-port
 
-# OS
+# ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Build
-*.log
+# ── R ─────────────────────────────────────────────────────
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
 
-#PDF
+# ── Gardenia Storage ──────────────────────────────────────
+.gardenia_data/
 
+# ── Gardenia Reports ─────────────────────────────────────
 gardenia_report.pdf
-
-#latex
-
 gardenia_report.tex
+
+# ── Docs ──────────────────────────────────────────────────
+Guia de desarrollo de agentes.pdf
